@@ -71,12 +71,6 @@ func (p *Manager) List() iter.Seq2[*Package, error] {
 }
 
 type AddOptions struct {
-	// Do What I Mean.
-	// If Add argument points at a recipe, implicitly build it.
-	// If Add argument points at a manifest, implicitly package it.
-	// Then proceed with the installation.
-	DWIM bool
-
 	// If exists a older version of the plugin, remove it prior
 	// to install this version.
 	Upgrade bool
@@ -154,14 +148,6 @@ func (p *Manager) Add(target string, opts *AddOptions) error {
 	}
 
 	base := filepath.Base(target)
-	if opts.DWIM {
-		switch base {
-		case "recipe.yaml":
-			return errors.ErrUnsupported
-		case "manifest.yaml":
-			return errors.ErrUnsupported
-		}
-	}
 
 	if opts.ImplicitFetch && !strings.HasSuffix(base, ".ptar") {
 		r, err := p.fetchrecipe(base)
