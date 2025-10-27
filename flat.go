@@ -12,11 +12,8 @@ import (
 
 	fsexporter "github.com/PlakarKorp/integration-fs/exporter"
 	_ "github.com/PlakarKorp/integration-ptar/storage"
-	"github.com/PlakarKorp/kloset/caching"
-	"github.com/PlakarKorp/kloset/caching/pebble"
 	"github.com/PlakarKorp/kloset/kcontext"
 	"github.com/PlakarKorp/kloset/locate"
-	"github.com/PlakarKorp/kloset/logging"
 	"github.com/PlakarKorp/kloset/repository"
 	"github.com/PlakarKorp/kloset/snapshot"
 	"github.com/PlakarKorp/kloset/snapshot/exporter"
@@ -25,6 +22,7 @@ import (
 
 // A backend that stores integrations in a single, flat, directory.
 type FlatBackend struct {
+	kcontext *kcontext.KContext
 	pkgdir   string
 	cachedir string
 
@@ -39,7 +37,7 @@ type FlatBackendOptions struct {
 	UnloadHook  func(*Manifest)
 }
 
-func NewFlatBackend(pkgdir, cachedir string, opts *FlatBackendOptions) (*FlatBackend, error) {
+func NewFlatBackend(kctx *kcontext.KContext, pkgdir, cachedir string, opts *FlatBackendOptions) (*FlatBackend, error) {
 	if err := os.MkdirAll(pkgdir, 0755); err != nil {
 		return nil, err
 	}
@@ -101,18 +99,12 @@ func (f *FlatBackend) extract(destDir, ptar string) error {
 		"location": "ptar://" + ptar,
 	}
 
-	ctx := kcontext.NewKContext() // XXX
-	ctx.SetCache(caching.NewManager(pebble.Constructor("in-memory")))
-	defer ctx.GetCache().Close()
-	logger := logging.NewLogger(os.Stdout, os.Stderr)
-	ctx.SetLogger(logger)
-
-	store, serializedConfig, err := storage.Open(ctx, opts)
+	store, serializedConfig, err := storage.Open(f.kcontext, opts)
 	if err != nil {
 		return err
 	}
 
-	repo, err := repository.New(ctx, nil, store, serializedConfig)
+	repo, err := repository.New(f.kcontext, nil, store, serializedConfig)
 	if err != nil {
 		return err
 	}
@@ -130,7 +122,7 @@ func (f *FlatBackend) extract(destDir, ptar string) error {
 		return err
 	}
 
-	fsexp, err := fsexporter.NewFSExporter(ctx, &exporter.Options{
+	fsexp, err := fsexporter.NewFSExporter(f.kcontext, &exporter.Options{
 		MaxConcurrency: 1,
 	}, "fs", opts)
 	if err != nil {
