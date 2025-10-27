@@ -47,6 +47,7 @@ func NewFlatBackend(kctx *kcontext.KContext, pkgdir, cachedir string, opts *Flat
 	}
 
 	return &FlatBackend{
+		kcontext:    kctx,
 		pkgdir:      pkgdir,
 		cachedir:    cachedir,
 		preloadhook: opts.PreLoadHook,
