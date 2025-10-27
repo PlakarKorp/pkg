@@ -233,6 +233,42 @@ func (f *FlatBackend) Load(pkg *Package, rd io.Reader) error {
 	return nil
 }
 
+func (f *FlatBackend) reload(pkg *Package) error {
+	// extract if needed
+	ptar := filepath.Join(f.pkgdir, pkg.Filename())
+	extracted := filepath.Join(f.cachedir, strings.TrimSuffix(pkg.Filename(), ".ptar"))
+	if _, err := os.Stat(extracted); err != nil {
+		if err := f.extract(extracted, ptar); err != nil {
+			f.unload(ptar, extracted)
+			return err
+		}
+	}
+
+	m, err := f.loadmanifest(filepath.Join(extracted, "manifest.yaml"))
+	if err != nil {
+		f.unload(ptar, extracted)
+		return err
+	}
+
+	if f.loadhook != nil {
+		f.loadhook(m, extracted)
+	}
+
+	return nil
+}
+
+func (f *FlatBackend) LoadAll() error {
+	for pkg, err := range f.List("") {
+		if err != nil {
+			return err
+		}
+		if err := f.reload(pkg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (f *FlatBackend) unload(pkgfile, extracted string) error {
 	err := os.Remove(pkgfile)
 	if extracted != "" {
