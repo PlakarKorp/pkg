@@ -168,28 +168,23 @@ func (p *Manager) Add(target string, opts *AddOptions) error {
 	base := filepath.Base(target)
 
 	if opts.ImplicitFetch && !strings.HasSuffix(base, ".ptar") {
-		var (
-			r   *Recipe
-			err error
-		)
+		var name, version string
 
-		if opts.Version == "" {
-			r, err = p.fetchrecipe(base)
+		if opts.Version != "" {
+			name, version = base, opts.Version
+		} else {
+			r, err := p.fetchrecipe(base)
 			if err != nil {
 				return err
 			}
-		} else {
-			r = &Recipe{
-				Name:    target,
-				Version: opts.Version,
-			}
+			name, version = r.Name, r.Version
 		}
 
-		if err = p.preadd(r.Name, r.Version, opts); err != nil {
+		if err := p.preadd(name, version, opts); err != nil {
 			return err
 		}
 
-		return p.fetchbinary(r)
+		return p.fetchbinary(name, version)
 	}
 
 	var pkg Package
@@ -254,14 +249,14 @@ func (p *Manager) fetchrecipe(name string) (*Recipe, error) {
 	return &recipe, nil
 }
 
-func (p *Manager) fetchbinary(r *Recipe) error {
+func (p *Manager) fetchbinary(name, version string) error {
 	if p.binaryNeedsToken && p.token == "" {
 		return ErrMissingToken
 	}
 
 	pkg := Package{
-		Name:            r.Name,
-		Version:         r.Version,
+		Name:            name,
+		Version:         version,
 		Architecture:    runtime.GOARCH,
 		OperatingSystem: runtime.GOOS,
 	}
