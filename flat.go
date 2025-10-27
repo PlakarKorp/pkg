@@ -13,7 +13,6 @@ import (
 	fsexporter "github.com/PlakarKorp/integration-fs/exporter"
 	"github.com/PlakarKorp/kloset/kcontext"
 	"github.com/PlakarKorp/kloset/locate"
-	"github.com/PlakarKorp/kloset/location"
 	"github.com/PlakarKorp/kloset/repository"
 	"github.com/PlakarKorp/kloset/snapshot"
 	"github.com/PlakarKorp/kloset/snapshot/exporter"
@@ -172,32 +171,9 @@ func (f *flat) loadmanifest(mpath string) (*Manifest, error) {
 			return nil, fmt.Errorf("bad executable path %q", conn.Executable)
 		}
 
-		// var flags location.Flags
-		for _, flag := range conn.LocationFlags {
-			_, err := location.ParseFlag(flag)
-			if err != nil {
-				return nil, fmt.Errorf("unknown flag %q", flag)
-			}
-			// flags |= f
+		if _, err := conn.Flags(); err != nil {
+			return nil, err
 		}
-
-		// var err error
-		// for _, proto := range conn.Protocols {
-		// 	switch conn.Type {
-		// 	case "importer":
-		// 		err = plugin.registerImporter(proto, flags, exe, conn.Args)
-		// 	case "exporter":
-		// 		err = plugin.registerExporter(proto, flags, exe, conn.Args)
-		// 	case "storage":
-		// 		err = plugin.registerStorage(proto, flags, exe, conn.Args)
-		// 	default:
-		// 		err = fmt.Errorf("unknown plugin type: %s", conn.Type)
-		// 	}
-		// 	if err != nil {
-		// 		plugin.TearDown(ctx)
-		// 		return err
-		// 	}
-		// }
 	}
 
 	return &m, nil

@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/PlakarKorp/kloset/location"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -52,4 +53,15 @@ func (m *Manifest) Parse(rd io.Reader) error {
 	}
 
 	return nil
+}
+
+func (conn *ManifestConnector) Flags() (flags location.Flags, err error) {
+	for _, flag := range conn.LocationFlags {
+		f, err := location.ParseFlag(flag)
+		if err != nil {
+			return 0, fmt.Errorf("%w: %q", err, flag)
+		}
+		flags |= f
+	}
+	return
 }
