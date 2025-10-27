@@ -10,6 +10,15 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
+type ManifestConnector struct {
+	Type          string   `yaml:"type"`
+	Protocols     []string `yaml:"protocols"`
+	LocationFlags []string `yaml:"location_flags"`
+	Executable    string   `yaml:"executable"`
+	Args          []string `yaml:"args"`
+	ExtraFiles    []string `yaml:"extra_files"`
+}
+
 type Manifest struct {
 	Name        string   `yaml:"name"`
 	DisplayName string   `yaml:"display_name"`
@@ -20,14 +29,7 @@ type Manifest struct {
 	APIVersion  string   `yaml:"api_version"`
 	Version     string   `yaml:"version"`
 
-	Connectors []struct {
-		Type          string   `yaml:"type"`
-		Protocols     []string `yaml:"protocols"`
-		LocationFlags []string `yaml:"location_flags"`
-		Executable    string   `yaml:"executable"`
-		Args          []string `yaml:"args"`
-		ExtraFiles    []string `yaml:"extra_files"`
-	} `yaml:"connectors"`
+	Connectors []ManifestConnector `yaml:"connectors"`
 }
 
 func (m *Manifest) Parse(rd io.Reader) error {
