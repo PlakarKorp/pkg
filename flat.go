@@ -86,6 +86,10 @@ func (f *FlatBackend) List(name string) iter.Seq2[*Package, error] {
 					}
 				}
 
+				if name != "" && pkg.Name != name {
+					continue
+				}
+
 				if !yield(&pkg, nil) {
 					return
 				}
