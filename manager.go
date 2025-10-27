@@ -261,7 +261,8 @@ func (p *Manager) fetchbinary(name, version string) error {
 		OperatingSystem: runtime.GOOS,
 	}
 
-	resp, err := p.fetch(p.repository, "kloset/pkg/"+pkg.Filename())
+	s := path.Join("kloset/pkg", PLUGIN_API_VERSION, pkg.Filename())
+	resp, err := p.fetch(p.repository, s)
 	if err != nil {
 		return err
 	}
