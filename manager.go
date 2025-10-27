@@ -103,13 +103,16 @@ type AddOptions struct {
 }
 
 func (p *Manager) preadd(name, version string, opts *AddOptions) error {
-	if opts.AllowMultipleVersions {
-		return nil
-	}
-
 	for pkg, err := range p.store.List(name) {
 		if err != nil {
 			return err
+		}
+
+		if opts.AllowMultipleVersions {
+			if pkg.Version == version {
+				return ErrAlreadyInstalled
+			}
+			continue
 		}
 
 		if !opts.Replace && !opts.Upgrade && !opts.Downgrade {
