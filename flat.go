@@ -11,8 +11,12 @@ import (
 	"strings"
 
 	fsexporter "github.com/PlakarKorp/integration-fs/exporter"
+	_ "github.com/PlakarKorp/integration-ptar/storage"
+	"github.com/PlakarKorp/kloset/caching"
+	"github.com/PlakarKorp/kloset/caching/pebble"
 	"github.com/PlakarKorp/kloset/kcontext"
 	"github.com/PlakarKorp/kloset/locate"
+	"github.com/PlakarKorp/kloset/logging"
 	"github.com/PlakarKorp/kloset/repository"
 	"github.com/PlakarKorp/kloset/snapshot"
 	"github.com/PlakarKorp/kloset/snapshot/exporter"
@@ -98,6 +102,10 @@ func (f *flat) extract(destDir, ptar string) error {
 	}
 
 	ctx := kcontext.NewKContext() // XXX
+	ctx.SetCache(caching.NewManager(pebble.Constructor("in-memory")))
+	defer ctx.GetCache().Close()
+	logger := logging.NewLogger(os.Stdout, os.Stderr)
+	ctx.SetLogger(logger)
 
 	store, serializedConfig, err := storage.Open(ctx, opts)
 	if err != nil {
