@@ -82,6 +82,10 @@ func (p *Manager) List() iter.Seq2[*Package, error] {
 }
 
 type AddOptions struct {
+	// The version to install, if given.  Otherwise, the latest
+	// version available will be used.
+	Version string
+
 	// If exists a older version of the plugin, remove it prior
 	// to install this version.
 	Upgrade bool
@@ -164,9 +168,21 @@ func (p *Manager) Add(target string, opts *AddOptions) error {
 	base := filepath.Base(target)
 
 	if opts.ImplicitFetch && !strings.HasSuffix(base, ".ptar") {
-		r, err := p.fetchrecipe(base)
-		if err != nil {
-			return err
+		var (
+			r   *Recipe
+			err error
+		)
+
+		if opts.Version == "" {
+			r, err = p.fetchrecipe(base)
+			if err != nil {
+				return err
+			}
+		} else {
+			r = &Recipe{
+				Name:    target,
+				Version: opts.Version,
+			}
 		}
 
 		if err = p.preadd(r.Name, r.Version, opts); err != nil {
