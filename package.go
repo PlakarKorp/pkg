@@ -80,5 +80,5 @@ func (pkg *Package) Validate() error {
 }
 
 func (p *Package) Filename() string {
-	return fmt.Sprintf("%s_%s_%s_%s.ptar", p.Name, p.Version, p.OperatingSystem, p.OperatingSystem)
+	return fmt.Sprintf("%s_%s_%s_%s.ptar", p.Name, p.Version, p.OperatingSystem, p.Architecture)
 }
