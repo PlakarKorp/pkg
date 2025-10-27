@@ -27,6 +27,7 @@ var (
 type Manager struct {
 	store            Backend
 	repository       *url.URL
+	recipes          *url.URL
 	token            string
 	binaryNeedsToken bool
 	useragent        string
@@ -34,6 +35,7 @@ type Manager struct {
 
 type Options struct {
 	InstallURL       string
+	RecipesURL       string
 	Token            string
 	BinaryNeedsToken bool
 
@@ -59,6 +61,15 @@ func New(store Backend, opts *Options) (*Manager, error) {
 		}
 		m.repository = u
 	}
+
+	if opts.RecipesURL != "" {
+		u, err := url.Parse(opts.RecipesURL)
+		if err != nil {
+			return nil, err
+		}
+		m.recipes = u
+	}
+
 	if m.useragent == "" {
 		m.useragent = "pkg/v0.0.1"
 	}
@@ -180,8 +191,8 @@ func (p *Manager) Add(target string, opts *AddOptions) error {
 	return p.store.Load(&pkg, fp)
 }
 
-func (p *Manager) fetch(endpoint string) (*http.Response, error) {
-	u := *p.repository
+func (p *Manager) fetch(url *url.URL, endpoint string) (*http.Response, error) {
+	u := *url
 	u.Path = path.Join(u.Path, endpoint)
 
 	req, err := http.NewRequest("GET", u.String(), nil)
@@ -210,7 +221,7 @@ func (p *Manager) fetch(endpoint string) (*http.Response, error) {
 func (p *Manager) fetchrecipe(name string) (*Recipe, error) {
 	s := path.Join("kloset/recipe", PLUGIN_API_VERSION, name) + ".yaml"
 
-	resp, err := p.fetch(s)
+	resp, err := p.fetch(p.recipes, s)
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +247,7 @@ func (p *Manager) fetchbinary(r *Recipe) error {
 		OperatingSystem: runtime.GOOS,
 	}
 
-	resp, err := p.fetch("kloset/pkg/" + pkg.Filename())
+	resp, err := p.fetch(p.repository, "kloset/pkg/"+pkg.Filename())
 	if err != nil {
 		return err
 	}
@@ -275,8 +286,8 @@ func (p *Manager) Del(target string, opts *DelOptions) error {
 
 func (p *Manager) Query() iter.Seq2[*Integration, error] {
 	return func(yield func(*Integration, error) bool) {
-		endp := "v1/integraitons/" + PLUGIN_API_VERSION + ".json"
-		res, err := p.fetch(endp)
+		endp := "v1/integrations/" + PLUGIN_API_VERSION + ".json"
+		res, err := p.fetch(p.recipes, endp)
 		if err != nil {
 			yield(nil, err)
 			return
