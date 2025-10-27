@@ -24,7 +24,7 @@ import (
 )
 
 // A backend that stores integrations in a single, flat, directory.
-type flat struct {
+type FlatBackend struct {
 	pkgdir   string
 	cachedir string
 
@@ -39,7 +39,7 @@ type FlatBackendOptions struct {
 	UnloadHook  func(*Manifest)
 }
 
-func NewFlatBackend(pkgdir, cachedir string, opts *FlatBackendOptions) (Backend, error) {
+func NewFlatBackend(pkgdir, cachedir string, opts *FlatBackendOptions) (*FlatBackend, error) {
 	if err := os.MkdirAll(pkgdir, 0755); err != nil {
 		return nil, err
 	}
@@ -48,7 +48,7 @@ func NewFlatBackend(pkgdir, cachedir string, opts *FlatBackendOptions) (Backend,
 		return nil, err
 	}
 
-	return &flat{
+	return &FlatBackend{
 		pkgdir:      pkgdir,
 		cachedir:    cachedir,
 		preloadhook: opts.PreLoadHook,
@@ -57,7 +57,7 @@ func NewFlatBackend(pkgdir, cachedir string, opts *FlatBackendOptions) (Backend,
 	}, nil
 }
 
-func (f *flat) List(name string) iter.Seq2[*Package, error] {
+func (f *FlatBackend) List(name string) iter.Seq2[*Package, error] {
 	return func(yield func(*Package, error) bool) {
 		dir, err := os.Open(f.pkgdir)
 		if err != nil {
@@ -96,7 +96,7 @@ func (f *flat) List(name string) iter.Seq2[*Package, error] {
 	}
 }
 
-func (f *flat) extract(destDir, ptar string) error {
+func (f *FlatBackend) extract(destDir, ptar string) error {
 	opts := map[string]string{
 		"location": "ptar://" + ptar,
 	}
@@ -160,7 +160,7 @@ func (f *flat) extract(destDir, ptar string) error {
 	return nil
 }
 
-func (f *flat) loadmanifest(mpath string) (*Manifest, error) {
+func (f *FlatBackend) loadmanifest(mpath string) (*Manifest, error) {
 	fp, err := os.Open(mpath)
 	if err != nil {
 		return nil, err
@@ -187,7 +187,7 @@ func (f *flat) loadmanifest(mpath string) (*Manifest, error) {
 	return &m, nil
 }
 
-func (f *flat) Load(pkg *Package, rd io.Reader) error {
+func (f *FlatBackend) Load(pkg *Package, rd io.Reader) error {
 	fp, err := os.CreateTemp(f.pkgdir, "."+pkg.Name+"-*")
 	if err != nil {
 		return err
@@ -232,7 +232,7 @@ func (f *flat) Load(pkg *Package, rd io.Reader) error {
 	return nil
 }
 
-func (f *flat) unload(pkgfile, extracted string) error {
+func (f *FlatBackend) unload(pkgfile, extracted string) error {
 	err := os.Remove(pkgfile)
 	if extracted != "" {
 		if e := os.RemoveAll(extracted); err == nil && !errors.Is(e, fs.ErrNotExist) {
@@ -242,7 +242,7 @@ func (f *flat) unload(pkgfile, extracted string) error {
 	return err
 }
 
-func (f *flat) Unload(pkg *Package) error {
+func (f *FlatBackend) Unload(pkg *Package) error {
 	var (
 		pkgfile   = filepath.Join(f.pkgdir, pkg.Filename())
 		extf      = strings.TrimSuffix(pkg.Filename(), ".ptar")
