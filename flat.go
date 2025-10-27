@@ -29,13 +29,13 @@ type FlatBackend struct {
 	cachedir string
 
 	preloadhook func(*Manifest) error
-	loadhook    func(*Manifest)
+	loadhook    func(*Manifest, string)
 	unloadhook  func(*Manifest)
 }
 
 type FlatBackendOptions struct {
 	PreLoadHook func(*Manifest) error
-	LoadHook    func(*Manifest)
+	LoadHook    func(*Manifest, string)
 	UnloadHook  func(*Manifest)
 }
 
@@ -220,13 +220,14 @@ func (f *FlatBackend) Load(pkg *Package, rd io.Reader) error {
 		}
 	}
 
-	if err := os.Link(fp.Name(), filepath.Join(f.pkgdir, pkg.Filename())); err != nil {
+	pkgdir := filepath.Join(f.pkgdir, pkg.Filename())
+	if err := os.Link(fp.Name(), pkgdir); err != nil {
 		f.unload(fp.Name(), extracted)
 		return err
 	}
 
 	if f.loadhook != nil {
-		f.loadhook(m)
+		f.loadhook(m, extracted)
 	}
 
 	return nil
