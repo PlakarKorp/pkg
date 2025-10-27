@@ -27,7 +27,7 @@ var (
 type Manager struct {
 	store            Backend
 	repository       *url.URL
-	recipes          *url.URL
+	api              *url.URL
 	token            string
 	binaryNeedsToken bool
 	useragent        string
@@ -35,7 +35,7 @@ type Manager struct {
 
 type Options struct {
 	InstallURL       string
-	RecipesURL       string
+	ApiURL           string
 	Token            string
 	BinaryNeedsToken bool
 
@@ -62,12 +62,12 @@ func New(store Backend, opts *Options) (*Manager, error) {
 		m.repository = u
 	}
 
-	if opts.RecipesURL != "" {
-		u, err := url.Parse(opts.RecipesURL)
+	if opts.ApiURL != "" {
+		u, err := url.Parse(opts.ApiURL)
 		if err != nil {
 			return nil, err
 		}
-		m.recipes = u
+		m.api = u
 	}
 
 	if m.useragent == "" {
@@ -235,7 +235,7 @@ func (p *Manager) fetch(url *url.URL, endpoint string) (*http.Response, error) {
 func (p *Manager) fetchrecipe(name string) (*Recipe, error) {
 	s := path.Join("kloset/recipe", PLUGIN_API_VERSION, name) + ".yaml"
 
-	resp, err := p.fetch(p.recipes, s)
+	resp, err := p.fetch(p.repository, s)
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +302,7 @@ func (p *Manager) Del(target string, opts *DelOptions) error {
 func (p *Manager) Query() iter.Seq2[*Integration, error] {
 	return func(yield func(*Integration, error) bool) {
 		endp := "v1/integrations/" + PLUGIN_API_VERSION + ".json"
-		res, err := p.fetch(p.recipes, endp)
+		res, err := p.fetch(p.api, endp)
 		if err != nil {
 			yield(nil, err)
 			return
