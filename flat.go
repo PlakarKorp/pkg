@@ -27,14 +27,14 @@ type FlatBackend struct {
 	cachedir string
 
 	preloadhook func(*Manifest) error
-	loadhook    func(*Manifest, string)
-	unloadhook  func(*Manifest)
+	loadhook    func(*Manifest, *Package, string)
+	unloadhook  func(*Manifest, *Package)
 }
 
 type FlatBackendOptions struct {
 	PreLoadHook func(*Manifest) error
-	LoadHook    func(*Manifest, string)
-	UnloadHook  func(*Manifest)
+	LoadHook    func(*Manifest, *Package, string)
+	UnloadHook  func(*Manifest, *Package)
 }
 
 func NewFlatBackend(kctx *kcontext.KContext, pkgdir, cachedir string, opts *FlatBackendOptions) (*FlatBackend, error) {
@@ -224,7 +224,7 @@ func (f *FlatBackend) Load(pkg *Package, rd io.Reader) error {
 	}
 
 	if f.loadhook != nil {
-		f.loadhook(m, extracted)
+		f.loadhook(m, pkg, extracted)
 	}
 
 	return nil
@@ -248,7 +248,7 @@ func (f *FlatBackend) reload(pkg *Package) error {
 	}
 
 	if f.loadhook != nil {
-		f.loadhook(m, extracted)
+		f.loadhook(m, pkg, extracted)
 	}
 
 	return nil

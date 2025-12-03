@@ -28,7 +28,6 @@ type Manifest struct {
 	License     string   `yaml:"license"`
 	Tags        []string `yaml:"tags"`
 	APIVersion  string   `yaml:"api_version"`
-	Version     string   `yaml:"version"`
 
 	Connectors []ManifestConnector `yaml:"connectors"`
 }
@@ -36,11 +35,6 @@ type Manifest struct {
 func (m *Manifest) Parse(rd io.Reader) error {
 	if err := yaml.NewDecoder(rd).Decode(m); err != nil {
 		return fmt.Errorf("failed to decode the manifest: %w", err)
-	}
-
-	// We really want version to start with a 'v'
-	if m.Version != "" && m.Version[0] != 'v' {
-		m.Version = "v" + m.Version
 	}
 
 	// Windows really wants executables to end with .exe
