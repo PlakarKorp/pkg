@@ -3,9 +3,9 @@ module github.com/PlakarKorp/pkg
 go 1.25.1
 
 require (
-	github.com/PlakarKorp/integration-fs v1.0.13
-	github.com/PlakarKorp/integration-ptar v1.0.5
-	github.com/PlakarKorp/kloset v1.0.12
+	github.com/PlakarKorp/integration-fs v1.0.14
+	github.com/PlakarKorp/integration-ptar v1.0.6-0.20251129124308-5ede9e09abfc
+	github.com/PlakarKorp/kloset v1.0.13-0.20251208145631-4f5b43e43a67
 	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/mod v0.30.0
 )
