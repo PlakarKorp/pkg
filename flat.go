@@ -141,7 +141,6 @@ func (f *FlatBackend) extract(destDir, ptar string) error {
 
 	base := snap.Header.GetSource(0).Importer.Directory
 	err = snap.Restore(fsexp, tmpdir, base, &snapshot.RestoreOptions{
-		MaxConcurrency: 1,
 		Strip:          base,
 	})
 	if err != nil {
