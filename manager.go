@@ -18,26 +18,28 @@ import (
 
 const PLUGIN_API_VERSION = "v1.0.0"
 
+type RequestHook func(*http.Request) error
+
 var (
-	ErrInvalidOptions   = errors.New("invalid options")
-	ErrAlreadyInstalled = errors.New("already installed")
-	ErrMissingToken     = errors.New("token required")
+	ErrInvalidOptions        = errors.New("invalid options")
+	ErrAlreadyInstalled      = errors.New("already installed")
+	ErrAuthorizationRequired = errors.New("authorization required")
 )
 
 type Manager struct {
-	store            Backend
-	repository       *url.URL
-	api              *url.URL
-	token            string
-	binaryNeedsToken bool
-	useragent        string
+	store           Backend
+	repository      *url.URL
+	api             *url.URL
+	reqhook         RequestHook
+	binaryNeedsAuth bool
+	useragent       string
 }
 
 type Options struct {
-	InstallURL       string
-	ApiURL           string
-	Token            string
-	BinaryNeedsToken bool
+	InstallURL      string
+	ApiURL          string
+	BinaryNeedsAuth bool
+	RequestHook     RequestHook
 
 	// User agent name for network requests on the repository at
 	// InstallURL.  "(os/architecture)" will be appended
@@ -45,15 +47,36 @@ type Options struct {
 	UserAgent string
 }
 
+// WithBearer adds an Authorization header with the Bearer token
+// returned by the given callback.  It's meant to be passed as
+// [Options.RequestHook].  If it yields an empty token, the header
+// will not be added.
+func WithBearer(fn func() (string, error)) func(*http.Request) error {
+	return func(req *http.Request) error {
+		token, err := fn()
+		if err != nil {
+			return err
+		}
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		return nil
+	}
+}
+
+// New creates a new package manager.
 func New(store Backend, opts *Options) (*Manager, error) {
 	if opts == nil {
 		opts = &Options{}
 	}
 
 	m := &Manager{
-		store:     store,
-		useragent: opts.UserAgent,
+		store:           store,
+		useragent:       opts.UserAgent,
+		binaryNeedsAuth: opts.BinaryNeedsAuth,
+		reqhook:         opts.RequestHook,
 	}
+
 	if opts.InstallURL != "" {
 		u, err := url.Parse(opts.InstallURL)
 		if err != nil {
@@ -77,6 +100,7 @@ func New(store Backend, opts *Options) (*Manager, error) {
 	return m, nil
 }
 
+// List lists all the installed packages.
 func (p *Manager) List() iter.Seq2[*Package, error] {
 	return p.store.List("")
 }
@@ -205,7 +229,7 @@ func (p *Manager) Add(target string, opts *AddOptions) error {
 	return p.store.Load(&pkg, fp)
 }
 
-func (p *Manager) fetch(url *url.URL, endpoint string) (*http.Response, error) {
+func (p *Manager) fetch(url *url.URL, endpoint string, reqauth bool) (*http.Response, error) {
 	u := *url
 	u.Path = path.Join(u.Path, endpoint)
 
@@ -215,8 +239,14 @@ func (p *Manager) fetch(url *url.URL, endpoint string) (*http.Response, error) {
 	}
 
 	req.Header.Set("User-Agent", p.useragent)
-	if p.token != "" {
-		req.Header.Set("Authorization", "Bearer "+p.token)
+	if reqauth && p.reqhook != nil {
+		if err := p.reqhook(req); err != nil {
+			return nil, err
+		}
+	}
+
+	if reqauth && req.Header.Get("Authorization") == "" {
+		return nil, ErrAuthorizationRequired
 	}
 
 	resp, err := http.DefaultClient.Do(req)
@@ -235,7 +265,7 @@ func (p *Manager) fetch(url *url.URL, endpoint string) (*http.Response, error) {
 func (p *Manager) fetchrecipe(name string) (*Recipe, error) {
 	s := path.Join("kloset/recipe", PLUGIN_API_VERSION, name) + ".yaml"
 
-	resp, err := p.fetch(p.repository, s)
+	resp, err := p.fetch(p.repository, s, false)
 	if err != nil {
 		return nil, err
 	}
@@ -250,10 +280,6 @@ func (p *Manager) fetchrecipe(name string) (*Recipe, error) {
 }
 
 func (p *Manager) fetchbinary(name, version string) error {
-	if p.binaryNeedsToken && p.token == "" {
-		return ErrMissingToken
-	}
-
 	pkg := Package{
 		Name:            name,
 		Version:         version,
@@ -262,7 +288,7 @@ func (p *Manager) fetchbinary(name, version string) error {
 	}
 
 	s := path.Join("kloset/pkg", PLUGIN_API_VERSION, pkg.Filename())
-	resp, err := p.fetch(p.repository, s)
+	resp, err := p.fetch(p.repository, s, p.binaryNeedsAuth)
 	if err != nil {
 		return err
 	}
@@ -277,6 +303,7 @@ type DelOptions struct {
 	All bool
 }
 
+// Del uninstalls all matching packages.
 func (p *Manager) Del(target string, opts *DelOptions) error {
 	if opts == nil {
 		opts = &DelOptions{}
@@ -302,7 +329,7 @@ func (p *Manager) Del(target string, opts *DelOptions) error {
 func (p *Manager) Query() iter.Seq2[*Integration, error] {
 	return func(yield func(*Integration, error) bool) {
 		endp := "v1/integrations/" + PLUGIN_API_VERSION + ".json"
-		res, err := p.fetch(p.api, endp)
+		res, err := p.fetch(p.api, endp, false)
 		if err != nil {
 			yield(nil, err)
 			return
