@@ -30,11 +30,11 @@ import (
 
 	fsexporter "github.com/PlakarKorp/integration-fs/exporter"
 	_ "github.com/PlakarKorp/integration-ptar/storage"
+	"github.com/PlakarKorp/kloset/connectors"
 	"github.com/PlakarKorp/kloset/kcontext"
 	"github.com/PlakarKorp/kloset/locate"
 	"github.com/PlakarKorp/kloset/repository"
 	"github.com/PlakarKorp/kloset/snapshot"
-	"github.com/PlakarKorp/kloset/snapshot/exporter"
 	"github.com/PlakarKorp/kloset/storage"
 )
 
@@ -118,11 +118,9 @@ func (f *FlatBackend) List(name string) iter.Seq2[*Package, error] {
 }
 
 func (f *FlatBackend) extract(destDir, ptar string) error {
-	opts := map[string]string{
+	store, serializedConfig, err := storage.Open(f.kcontext, map[string]string{
 		"location": "ptar://" + ptar,
-	}
-
-	store, serializedConfig, err := storage.Open(f.kcontext, opts)
+	})
 	if err != nil {
 		return err
 	}
@@ -145,20 +143,23 @@ func (f *FlatBackend) extract(destDir, ptar string) error {
 		return err
 	}
 
-	fsexp, err := fsexporter.NewFSExporter(f.kcontext, &exporter.Options{
-		MaxConcurrency: 1,
-	}, "fs", opts)
-	if err != nil {
-		return err
-	}
-
 	tmpdir, err := os.MkdirTemp(filepath.Dir(destDir), ".extract-*")
 	if err != nil {
 		return err
 	}
 
+	fsexp, err := fsexporter.NewFSExporter(f.kcontext, &connectors.Options{
+		MaxConcurrency: 1,
+	}, "fs", map[string]string{
+		"location": "fs://" + tmpdir,
+	})
+	if err != nil {
+		os.RemoveAll(tmpdir)
+		return err
+	}
+
 	base := snap.Header.GetSource(0).Importer.Directory
-	err = snap.Restore(fsexp, tmpdir, base, &snapshot.RestoreOptions{
+	err = snap.Export(fsexp, base, &snapshot.ExportOptions{
 		Strip: base,
 	})
 	if err != nil {
