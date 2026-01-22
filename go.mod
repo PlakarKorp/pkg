@@ -1,6 +1,6 @@
 module github.com/PlakarKorp/pkg
 
-go 1.25.1
+go 1.24.0
 
 require (
 	github.com/PlakarKorp/integration-fs v1.0.15-0.20260115153221-79b61b951e1b
