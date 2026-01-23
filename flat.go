@@ -31,11 +31,11 @@ import (
 	fsexporter "github.com/PlakarKorp/integration-fs/exporter"
 	_ "github.com/PlakarKorp/integration-ptar/storage"
 	"github.com/PlakarKorp/kloset/connectors"
+	"github.com/PlakarKorp/kloset/connectors/storage"
 	"github.com/PlakarKorp/kloset/kcontext"
 	"github.com/PlakarKorp/kloset/locate"
 	"github.com/PlakarKorp/kloset/repository"
 	"github.com/PlakarKorp/kloset/snapshot"
-	"github.com/PlakarKorp/kloset/storage"
 )
 
 // A backend that stores integrations in a single, flat, directory.

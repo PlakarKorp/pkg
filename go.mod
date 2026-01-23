@@ -3,9 +3,9 @@ module github.com/PlakarKorp/pkg
 go 1.24.0
 
 require (
-	github.com/PlakarKorp/integration-fs v1.0.15-0.20260115153221-79b61b951e1b
-	github.com/PlakarKorp/integration-ptar v1.0.6-0.20251129124308-5ede9e09abfc
-	github.com/PlakarKorp/kloset v1.0.13-0.20260116090628-eb4b5f2debb6
+	github.com/PlakarKorp/integration-fs v1.0.15-0.20260123132718-bac1cb5d195f
+	github.com/PlakarKorp/integration-ptar v1.0.6-0.20260123133621-43f212ae4ad2
+	github.com/PlakarKorp/kloset v1.0.13-0.20260123115935-11d26a52e819
 	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/mod v0.32.0
 )
@@ -24,15 +24,15 @@ require (
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/mattn/go-sqlite3 v1.14.33 // indirect
 	github.com/nickball/go-aes-key-wrap v0.0.0-20170929221519-1c3aa3e4dfc5 // indirect
-	github.com/pierrec/lz4/v4 v4.1.23 // indirect
+	github.com/pierrec/lz4/v4 v4.1.25 // indirect
 	github.com/tink-crypto/tink-go/v2 v2.6.0 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	github.com/zeebo/blake3 v0.2.4 // indirect
-	golang.org/x/crypto v0.46.0 // indirect
-	golang.org/x/net v0.47.0 // indirect
+	golang.org/x/crypto v0.47.0 // indirect
+	golang.org/x/net v0.48.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/sys v0.39.0 // indirect
+	golang.org/x/sys v0.40.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
