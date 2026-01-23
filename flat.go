@@ -148,10 +148,12 @@ func (f *FlatBackend) extract(destDir, ptar string) error {
 		return err
 	}
 
+	content := "fs://" + tmpdir + "/content"
+
 	fsexp, err := fsexporter.NewFSExporter(f.kcontext, &connectors.Options{
 		MaxConcurrency: 1,
 	}, "fs", map[string]string{
-		"location": "fs://" + tmpdir,
+		"location": content,
 	})
 	if err != nil {
 		os.RemoveAll(tmpdir)
@@ -167,11 +169,12 @@ func (f *FlatBackend) extract(destDir, ptar string) error {
 		return err
 	}
 
-	if err := os.Rename(tmpdir, destDir); err != nil {
+	if err := os.Rename(tmpdir+"/content", destDir); err != nil {
 		os.RemoveAll(tmpdir)
 		return fmt.Errorf("failed to rename: %w", err)
 	}
 
+	os.RemoveAll(tmpdir)
 	return nil
 }
 
