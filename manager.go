@@ -29,6 +29,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	"golang.org/x/mod/semver"
@@ -344,27 +345,106 @@ func (p *Manager) Del(target string, opts *DelOptions) error {
 	return nil
 }
 
-func (p *Manager) Query() iter.Seq2[*Integration, error] {
-	return func(yield func(*Integration, error) bool) {
+type QueryOptions struct {
+	Type   string
+	Tag    string
+	Status string
+
+	OnlyLocal bool
+}
+
+func (p *Manager) Query(opts *QueryOptions) (ret []*Integration, err error) {
+	if opts == nil {
+		opts = &QueryOptions{}
+	}
+
+	packages := make(map[string]*Integration)
+	for p, err := range p.List() {
+		if err != nil {
+			return nil, err
+		}
+
+		// we don't have all the information locally, so fill
+		// what we have and integrate the rest after we've hit
+		// the api.
+		packages[p.Name] = &Integration{
+			Id:          p.Name,
+			Name:        p.Name,
+			DisplayName: p.Name,
+			Tags:        []string{},
+			APIVersion:  PLUGIN_API_VERSION,
+			Installation: IntegrationInstallation{
+				Status:  "installed",
+				Version: p.Version,
+			},
+		}
+	}
+
+	if !opts.OnlyLocal {
 		endp := "v1/integrations/" + PLUGIN_API_VERSION + ".json"
 		res, err := p.fetch(p.api, endp, false)
 		if err != nil {
-			yield(nil, err)
-			return
+			return nil, err
 		}
 		defer res.Body.Close()
 
 		var index IntegrationIndex
 		err = json.NewDecoder(res.Body).Decode(&index)
 		if err != nil {
-			yield(nil, err)
-			return
+			return nil, err
 		}
 
 		for i := range index.Plugins {
-			if !yield(&index.Plugins[i], nil) {
-				return
+			plug := &index.Plugins[i]
+
+			if p, ok := packages[plug.Id]; ok {
+				p.Id = plug.Id
+				p.DisplayName = plug.DisplayName
+				p.Description = plug.Description
+				p.Homepage = plug.Homepage
+				p.Repository = plug.Repository
+				p.License = plug.License
+				p.Tags = p.Tags
+				p.LatestVersion = plug.LatestVersion
+				p.Stage = plug.Stage
+				p.Types = plug.Types
+				p.Documentation = plug.Documentation
+				p.Icon = plug.Icon
+				p.Featured = plug.Featured
+
+				p.Installation.Available = true
+			} else {
+				plug.Installation.Status = "not-installed"
+				plug.Installation.Available = true
+				packages[plug.Id] = plug
 			}
 		}
 	}
+
+	for _, plug := range packages {
+		if opts.Type == "storage" && !plug.Types.Storage {
+			continue
+		}
+		if opts.Type == "source" && !plug.Types.Source {
+			continue
+		}
+		if opts.Type == "destination" && !plug.Types.Destination {
+			continue
+		}
+
+		if opts.Tag != "" && !slices.Contains(plug.Tags, opts.Tag) {
+			continue
+		}
+
+		if opts.Status != "" && opts.Status != plug.Installation.Status {
+			continue
+		}
+
+		ret = append(ret, plug)
+	}
+
+	slices.SortFunc(ret, func(a, b *Integration) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	return ret, nil
 }
