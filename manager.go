@@ -216,7 +216,7 @@ func (p *Manager) Add(target string, opts *AddOptions) error {
 		if opts.Version != "" {
 			name, version = base, opts.Version
 		} else {
-			r, err := p.fetchrecipe(base)
+			r, err := p.FetchRecipe(base)
 			if err != nil {
 				return err
 			}
@@ -281,7 +281,7 @@ func (p *Manager) fetch(url *url.URL, endpoint string, reqauth bool) (*http.Resp
 	return resp, nil
 }
 
-func (p *Manager) fetchrecipe(name string) (*Recipe, error) {
+func (p *Manager) FetchRecipe(name string) (*Recipe, error) {
 	s := path.Join("kloset/recipe", PLUGIN_API_VERSION, name) + ".yaml"
 
 	resp, err := p.fetch(p.repository, s, false)
