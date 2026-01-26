@@ -3,15 +3,15 @@ module github.com/PlakarKorp/pkg
 go 1.24.0
 
 require (
-	github.com/PlakarKorp/integration-fs v1.0.15-0.20260123132718-bac1cb5d195f
-	github.com/PlakarKorp/integration-ptar v1.0.6-0.20260123133621-43f212ae4ad2
-	github.com/PlakarKorp/kloset v1.0.13-0.20260123115935-11d26a52e819
+	github.com/PlakarKorp/integration-fs v1.1.0-beta.3
+	github.com/PlakarKorp/integration-ptar v1.1.0-beta.2
+	github.com/PlakarKorp/kloset v1.1.0-beta.1
 	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/mod v0.32.0
 )
 
 require (
-	github.com/PlakarKorp/go-cdc-chunkers v1.0.2 // indirect
+	github.com/PlakarKorp/go-cdc-chunkers v1.0.3 // indirect
 	github.com/PlakarKorp/go-human2duration v0.1.6 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.12 // indirect
