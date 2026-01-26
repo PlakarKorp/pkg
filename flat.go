@@ -147,6 +147,7 @@ func (f *FlatBackend) extract(destDir, ptar string) error {
 	if err != nil {
 		return err
 	}
+	defer os.RemoveAll(tmpdir)
 
 	content := "fs://" + tmpdir + "/content"
 
@@ -156,7 +157,6 @@ func (f *FlatBackend) extract(destDir, ptar string) error {
 		"location": content,
 	})
 	if err != nil {
-		os.RemoveAll(tmpdir)
 		return err
 	}
 
@@ -165,16 +165,13 @@ func (f *FlatBackend) extract(destDir, ptar string) error {
 		Strip: base,
 	})
 	if err != nil {
-		os.RemoveAll(tmpdir)
 		return err
 	}
 
 	if err := os.Rename(tmpdir+"/content", destDir); err != nil {
-		os.RemoveAll(tmpdir)
 		return fmt.Errorf("failed to rename: %w", err)
 	}
 
-	os.RemoveAll(tmpdir)
 	return nil
 }
 
