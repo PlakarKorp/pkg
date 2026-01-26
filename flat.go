@@ -100,9 +100,10 @@ func (f *FlatBackend) List(name string) iter.Seq2[*Package, error] {
 
 				var pkg Package
 				if err := pkg.parseName(dirents[i].Name()); err != nil {
-					if !yield(nil, err) {
-						return
+					if strings.HasPrefix(dirents[i].Name(), "fetch-plugin-") {
+						os.Remove(dirents[i].Name())
 					}
+					continue
 				}
 
 				if name != "" && pkg.Name != name {
