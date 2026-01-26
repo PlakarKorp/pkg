@@ -211,6 +211,7 @@ func (f *FlatBackend) Load(pkg *Package, rd io.Reader) error {
 	_, err = io.Copy(fp, rd)
 	fp.Close()
 	if err != nil {
+		os.Remove(fp.Name())
 		return err
 	}
 
