@@ -100,9 +100,10 @@ func (f *FlatBackend) List(name string) iter.Seq2[*Package, error] {
 
 				var pkg Package
 				if err := pkg.parseName(dirents[i].Name()); err != nil {
-					if !yield(nil, err) {
-						return
+					if strings.HasPrefix(dirents[i].Name(), "fetch-plugin-") {
+						os.Remove(dirents[i].Name())
 					}
+					continue
 				}
 
 				if name != "" && pkg.Name != name {
@@ -147,6 +148,7 @@ func (f *FlatBackend) extract(destDir, ptar string) error {
 	if err != nil {
 		return err
 	}
+	defer os.RemoveAll(tmpdir)
 
 	content := "fs://" + tmpdir + "/content"
 
@@ -156,7 +158,6 @@ func (f *FlatBackend) extract(destDir, ptar string) error {
 		"location": content,
 	})
 	if err != nil {
-		os.RemoveAll(tmpdir)
 		return err
 	}
 
@@ -165,16 +166,13 @@ func (f *FlatBackend) extract(destDir, ptar string) error {
 		Strip: base,
 	})
 	if err != nil {
-		os.RemoveAll(tmpdir)
 		return err
 	}
 
 	if err := os.Rename(tmpdir+"/content", destDir); err != nil {
-		os.RemoveAll(tmpdir)
 		return fmt.Errorf("failed to rename: %w", err)
 	}
 
-	os.RemoveAll(tmpdir)
 	return nil
 }
 
@@ -214,6 +212,7 @@ func (f *FlatBackend) Load(pkg *Package, rd io.Reader) error {
 	_, err = io.Copy(fp, rd)
 	fp.Close()
 	if err != nil {
+		os.Remove(fp.Name())
 		return err
 	}
 
