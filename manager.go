@@ -35,7 +35,7 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-const PLUGIN_API_VERSION = "v1.0.0"
+const PLUGIN_API_VERSION = "v1.1.0"
 
 type RequestHook func(*http.Request) error
 
