@@ -263,7 +263,7 @@ func (p *Manager) fetch(url *url.URL, endpoint string, reqauth bool) (*http.Resp
 }
 
 func (p *Manager) fetchrecipe(name string) (*Recipe, error) {
-	s := path.Join("kloset/recipe", PLUGIN_API_VERSION, name) + ".yaml"
+	s := path.Join("dist/plugins/kloset/enterprise", PLUGIN_API_VERSION, name) + "recipe.yaml"
 
 	resp, err := p.fetch(p.repository, s, false)
 	if err != nil {
@@ -287,7 +287,7 @@ func (p *Manager) fetchbinary(name, version string) error {
 		OperatingSystem: runtime.GOOS,
 	}
 
-	s := path.Join("kloset/pkg", PLUGIN_API_VERSION, pkg.Filename())
+	s := path.Join("dist/plugins/kloset/enterprise", PLUGIN_API_VERSION, name, pkg.Filename())
 	resp, err := p.fetch(p.repository, s, p.binaryNeedsAuth)
 	if err != nil {
 		return err
