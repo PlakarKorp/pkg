@@ -31,6 +31,9 @@ import (
 
 type ManifestConnector struct {
 	Type          string   `yaml:"type"`
+	Class         string   `yaml:"class"`
+	SubClass      string   `yaml:"subclass"`
+	Validator     string   `yaml:"validator"`
 	Protocols     []string `yaml:"protocols"`
 	LocationFlags []string `yaml:"location_flags"`
 	Executable    string   `yaml:"executable"`
@@ -48,6 +51,20 @@ type Manifest struct {
 	APIVersion  string   `yaml:"api_version"`
 
 	Connectors []ManifestConnector `yaml:"connectors"`
+}
+
+func NewManifestFromFile(path string) (*Manifest, error) {
+	fp, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer fp.Close()
+
+	var m Manifest
+	if err := m.Parse(fp); err != nil {
+		return nil, err
+	}
+	return &m, err
 }
 
 func (m *Manifest) Parse(rd io.Reader) error {
