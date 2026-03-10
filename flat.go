@@ -177,14 +177,8 @@ func (f *FlatBackend) extract(destDir, ptar string) error {
 }
 
 func (f *FlatBackend) loadmanifest(mpath string) (*Manifest, error) {
-	fp, err := os.Open(mpath)
+	m, err := NewManifestFromFile(mpath)
 	if err != nil {
-		return nil, err
-	}
-	defer fp.Close()
-
-	var m Manifest
-	if err := m.Parse(fp); err != nil {
 		return nil, err
 	}
 
@@ -200,7 +194,7 @@ func (f *FlatBackend) loadmanifest(mpath string) (*Manifest, error) {
 		}
 	}
 
-	return &m, nil
+	return m, nil
 }
 
 func (f *FlatBackend) Load(pkg *Package, rd io.Reader) error {
