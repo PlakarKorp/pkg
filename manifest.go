@@ -45,6 +45,8 @@ type Manifest struct {
 	Name        string   `yaml:"name"`
 	DisplayName string   `yaml:"display_name"`
 	Description string   `yaml:"description"`
+	Tier        string   `json:"tier"`
+	Contact     string   `json:"contact"`
 	Homepage    string   `yaml:"homepage"`
 	License     string   `yaml:"license"`
 	Tags        []string `yaml:"tags"`
