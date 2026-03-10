@@ -56,17 +56,21 @@ type Manifest struct {
 }
 
 func NewManifestFromFile(path string) (*Manifest, error) {
+	var m Manifest
+	if err := m.ParseFile(path); err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+func (m *Manifest) ParseFile(path string) error {
 	fp, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer fp.Close()
 
-	var m Manifest
-	if err := m.Parse(fp); err != nil {
-		return nil, err
-	}
-	return &m, err
+	return m.Parse(fp)
 }
 
 func (m *Manifest) Parse(rd io.Reader) error {

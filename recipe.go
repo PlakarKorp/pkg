@@ -34,6 +34,24 @@ type Recipe struct {
 	// Checksum   string `yaml:"checksum"`
 }
 
+func NewRecipeFromFile(path string) (*Recipe, error) {
+	var r Recipe
+	if err := r.ParseFile(path); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+func (recipe *Recipe) ParseFile(path string) error {
+	fp, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer fp.Close()
+
+	return recipe.Parse(fp)
+}
+
 func (recipe *Recipe) Parse(rd io.Reader) error {
 	return yaml.NewDecoder(rd).Decode(recipe)
 }
