@@ -27,8 +27,8 @@ const (
 
 	ResourceSubClassUndefined ResourceSubClass = ""
 	ResourceSubClassUnknown   ResourceSubClass = "unknown"
-	ResourceSubClassS3        ResourceSubClass = "s3"
 	ResourceSubClassGCS       ResourceSubClass = "gcs"
+	ResourceSubClassS3        ResourceSubClass = "s3"
 
 	ConnectorTypeImporter       ConnectorType = "importer"
 	ConnectorTypeExporter       ConnectorType = "exporter"
@@ -70,12 +70,24 @@ var connectorTypes []ConnectorType = []ConnectorType{
 	ConnectorTypeInventory,
 }
 
+var resourceClassTree map[ResourceClass][]ResourceSubClass = map[ResourceClass][]ResourceSubClass{
+	ResourceClassObjectStorage: {ResourceSubClassGCS, ResourceSubClassS3},
+}
+
 func (c ResourceClass) IsValid() bool {
 	return slices.Contains(resourceClasses, c)
 }
 
 func (c ResourceSubClass) IsValid() bool {
 	return slices.Contains(resourceSubClasses, c)
+}
+
+func (c ResourceSubClass) IsSubClassOf(parent ResourceClass) bool {
+	subclasses, found := resourceClassTree[parent]
+	if !found {
+		return false
+	}
+	return slices.Contains(subclasses, c)
 }
 
 func (c ConnectorType) IsValid() bool {
