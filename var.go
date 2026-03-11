@@ -40,11 +40,19 @@ const (
 var resourceClasses []ResourceClass = []ResourceClass{
 	ResourceClassUndefined,
 	ResourceClassUnknown,
+	ResourceClassAnalytics,
+	ResourceClassAPI,
+	ResourceClassBlockStorage,
 	ResourceClassCompute,
 	ResourceClassDatabase,
-	ResourceClassBlockStorage,
+	ResourceClassFileStorage,
+	ResourceClassIdentity,
+	ResourceClassMessaging,
+	ResourceClassNetwork,
 	ResourceClassObjectStorage,
-	ResourceClassAPI,
+	ResourceClassObservability,
+	ResourceClassRegistry,
+	ResourceClassSecurity,
 }
 
 var resourceSubClasses []ResourceSubClass = []ResourceSubClass{
