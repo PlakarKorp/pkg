@@ -11,11 +11,19 @@ type ConnectorType string
 const (
 	ResourceClassUndefined     ResourceClass = ""
 	ResourceClassUnknown       ResourceClass = "unknown"
+	ResourceClassAnalytics     ResourceClass = "analytics"
+	ResourceClassAPI           ResourceClass = "api"
+	ResourceClassBlockStorage  ResourceClass = "block-storage"
 	ResourceClassCompute       ResourceClass = "compute"
 	ResourceClassDatabase      ResourceClass = "database"
-	ResourceClassBlockStorage  ResourceClass = "block-storage"
+	ResourceClassFileStorage   ResourceClass = "file-storage"
+	ResourceClassIdentity      ResourceClass = "identity"
+	ResourceClassMessaging     ResourceClass = "messaging"
+	ResourceClassNetwork       ResourceClass = "network"
 	ResourceClassObjectStorage ResourceClass = "object-storage"
-	ResourceClassAPI           ResourceClass = "api"
+	ResourceClassObservability ResourceClass = "observability"
+	ResourceClassRegistry      ResourceClass = "registry"
+	ResourceClassSecurity      ResourceClass = "security"
 
 	ResourceSubClassUndefined ResourceSubClass = ""
 	ResourceSubClassUnknown   ResourceSubClass = "unknown"
@@ -32,11 +40,19 @@ const (
 var resourceClasses []ResourceClass = []ResourceClass{
 	ResourceClassUndefined,
 	ResourceClassUnknown,
+	ResourceClassAnalytics,
+	ResourceClassAPI,
+	ResourceClassBlockStorage,
 	ResourceClassCompute,
 	ResourceClassDatabase,
-	ResourceClassBlockStorage,
+	ResourceClassFileStorage,
+	ResourceClassIdentity,
+	ResourceClassMessaging,
+	ResourceClassNetwork,
 	ResourceClassObjectStorage,
-	ResourceClassAPI,
+	ResourceClassObservability,
+	ResourceClassRegistry,
+	ResourceClassSecurity,
 }
 
 var resourceSubClasses []ResourceSubClass = []ResourceSubClass{
