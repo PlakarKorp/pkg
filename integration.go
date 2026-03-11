@@ -18,11 +18,11 @@ type Protocol struct {
 }
 
 type Connector struct {
-	Type      string     `json:"type"` // importer, exporter, storage
-	Protocols []Protocol `json:"protocols"`
-	Class     string     `json:"class"`
-	SubClass  string     `json:"subclass"`
-	Validator any        `json:"validator"` // json schema
+	Type      ConnectorType    `json:"type"` // importer, exporter, storage
+	Protocols []Protocol       `json:"protocols"`
+	Class     ResourceClass    `json:"class"`
+	SubClass  ResourceSubClass `json:"subclass"`
+	Validator any              `json:"validator"` // json schema
 }
 
 type IntegrationV2 struct {
@@ -52,12 +52,12 @@ type Index struct {
 	Integrations []IntegrationV2 `json:"integrations"`
 }
 
-func recipe_Asset(r *Recipe, filename string) string {
+func recipe_Asset(r Recipe, filename string) string {
 	base := strings.Replace(r.Repository, "/github.com/", "/raw.githubusercontent.com/", 1)
 	return fmt.Sprintf("%s/refs/tags/%s/assets/%s", base, r.Version, filename)
 }
 
-func NewIntegrationFromRecipeAndManifest(manifestFile string, recipe *Recipe) (*IntegrationV2, error) {
+func NewIntegrationFromRecipeAndManifestFile(recipe Recipe, manifestFile string) (*IntegrationV2, error) {
 	manifest, err := NewManifestFromFile(manifestFile)
 	if err != nil {
 		return nil, err
@@ -87,6 +87,16 @@ func NewIntegrationFromRecipeAndManifest(manifestFile string, recipe *Recipe) (*
 		c.Type = conn.Type
 		c.Class = conn.Class
 		c.SubClass = conn.SubClass
+
+		if !c.Type.IsValid() {
+			log.Printf("WARNING: invalid connector type %q", c.Type)
+		}
+		if !c.Class.IsValid() {
+			log.Printf("WARNING: invalid class %q for connector %q", c.Class, c.Type)
+		}
+		if !c.SubClass.IsValid() {
+			log.Printf("WARNING: invalid subclass %q for connector %q", c.SubClass, c.Type)
+		}
 
 		if conn.Validator != "" {
 			data, err := os.ReadFile(filepath.Join(srcdir, conn.Validator))

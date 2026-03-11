@@ -1,48 +1,65 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
+	"path/filepath"
+	"time"
 
 	"github.com/PlakarKorp/pkg"
 )
 
 func main() {
-	var edition string
-	var api string
-	var recipePath string
-	var manifestPath string
-	var check bool
+	var klosetPluginsDir string
+	var integrationsDir string
+	var cacheDir string
+	var checkOnly bool
 
-	flag.BoolVar(&check, "check", false, "Check only")
-	flag.StringVar(&edition, "edition", "community", "Edition")
-	flag.StringVar(&api, "api", "v1.1.0", "API version")
-	flag.StringVar(&recipePath, "r", "", "Path to recipe file")
-	flag.StringVar(&manifestPath, "m", "./manifest.yaml", "Path to manifest file")
+	flag.BoolVar(&checkOnly, "check", false, "Only check the manifest")
+	flag.StringVar(&klosetPluginsDir, "kloset-plugins", "", "Path to the kloset-plugins repository")
+	flag.StringVar(&cacheDir, "cache", "/tmp/integrations-cache", "Path to the cache directory")
+	flag.StringVar(&integrationsDir, "integrations", "", "Path to the integrations root directory")
 	flag.Parse()
 
-	var r pkg.Recipe
-	r.Name = "@@NAME@@"
-	r.Repository = "@@REPOSITORY@@"
-	r.Version = "@@VERSION@@"
+	fn := manifestFromRemoteRepositoryWithCache(cacheDir)
+	if integrationsDir != "" {
+		fn = manifestFromLocalRepository(integrationsDir)
+	}
 
-	if recipePath != "" {
-		if err := r.ParseFile(recipePath); err != nil {
-			log.Fatalf("ERROR: failed to parse recipe: %v", err)
+	var res pkg.Index
+	res.Timestamp = time.Now()
+	res.Version = "v1.0.0"
+
+	for _, p := range ScanPlugins(klosetPluginsDir) {
+		int, err := p.CompileIntegration(fn)
+		if err != nil {
+			log.Printf("ERROR: %s", err)
+			continue
 		}
+		res.Integrations = append(res.Integrations, *int)
 	}
 
-	info, err := pkg.NewIntegrationFromRecipeAndManifest(manifestPath, &r)
-	if err != nil {
-		log.Fatalf("ERROR: failed to parse manifest: %v", err)
+	if checkOnly {
+		return
 	}
-	info.API = api
-	info.Edition = edition
 
-	if !check {
-		data, _ := json.MarshalIndent(info, "", "   ")
-		fmt.Println(string(data))
+	WriteJSON("out.json", &res)
+}
+
+func manifestFromLocalRepository(dir string) LocateManifestFunc {
+	return func(p Plugin) (string, error) {
+		name := filepath.Base(p.Repository)
+		return filepath.Join(dir, name, "manifest.yaml"), nil
+	}
+}
+
+func manifestFromRemoteRepositoryWithCache(cachedir string) LocateManifestFunc {
+	return func(p Plugin) (string, error) {
+		tmpdir, err := GitCloneTag(p.Repository, p.Version, cachedir)
+		if err != nil {
+			return "", fmt.Errorf("git clone failed: %w", err)
+		}
+		return filepath.Join(tmpdir, "manifest.yaml"), nil
 	}
 }
