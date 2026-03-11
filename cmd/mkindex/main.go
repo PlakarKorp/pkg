@@ -4,6 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/url"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -56,7 +58,18 @@ func manifestFromLocalRepository(dir string) LocateManifestFunc {
 
 func manifestFromRemoteRepositoryWithCache(cachedir string) LocateManifestFunc {
 	return func(p Plugin) (string, error) {
-		tmpdir, err := GitCloneTag(p.Repository, p.Version, cachedir)
+		repository := p.Repository
+		token := os.Getenv("PKG_CLONE_TOKEN")
+		if token != "" {
+			parsedUrl, err := url.Parse(repository)
+			if err != nil {
+				return "", fmt.Errorf("failed to parse repository URL: %w", err)
+			}
+			parsedUrl.User = url.User(token)
+			repository = parsedUrl.String()
+		}
+
+		tmpdir, err := GitCloneTag(repository, p.Version, cachedir)
 		if err != nil {
 			return "", fmt.Errorf("git clone failed: %w", err)
 		}

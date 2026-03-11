@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -69,7 +71,12 @@ func GitCloneOrPull(repository, directory string) error {
 }
 
 func GitCloneTag(repository, tag, workdir string) (string, error) {
-	sum := sha1.Sum([]byte(repository + "|" + tag))
+
+	parsedUrl, err := url.Parse(repository)
+	parsedUrl.User = nil
+	repolog := parsedUrl.String()
+
+	sum := sha1.Sum([]byte(repolog + "|" + tag))
 	name := hex.EncodeToString(sum[:])
 	path := filepath.Join(workdir, name)
 	ok, err := DirExists(path)
@@ -77,6 +84,7 @@ func GitCloneTag(repository, tag, workdir string) (string, error) {
 		return path, err
 	}
 	if ok {
+		log.Printf("Skipping git clone for %s@%s", repolog, tag)
 		return path, nil
 	}
 
@@ -84,7 +92,11 @@ func GitCloneTag(repository, tag, workdir string) (string, error) {
 		return "", fmt.Errorf("can't create dir: %w", err)
 	}
 
-	git := exec.Command("git", "clone", "--depth=1", "--branch", tag, repository, path)
+	log.Printf("Cloning %s@%s...", repolog, tag)
+	git := exec.Command("git", "--no-advice", "clone", "--depth=1", "--branch", tag, repository, path)
+	git.Env = append(git.Env, "GIT_TERMINAL_PROMPT=false")
+	git.Stdout = os.Stdout
+	git.Stderr = os.Stderr
 	if err := git.Run(); err != nil {
 		os.RemoveAll(path)
 		return "", fmt.Errorf("git clone failed: %w", err)
