@@ -30,15 +30,15 @@ import (
 )
 
 type ManifestConnector struct {
-	Type          string   `yaml:"type"`
-	Class         string   `yaml:"class"`
-	SubClass      string   `yaml:"subclass"`
-	Validator     string   `yaml:"validator"`
-	Protocols     []string `yaml:"protocols"`
-	LocationFlags []string `yaml:"location_flags"`
-	Executable    string   `yaml:"executable"`
-	Args          []string `yaml:"args"`
-	ExtraFiles    []string `yaml:"extra_files"`
+	Type          ConnectorType    `yaml:"type"`
+	Class         ResourceClass    `yaml:"class"`
+	SubClass      ResourceSubClass `yaml:"subclass"`
+	Validator     string           `yaml:"validator"`
+	Protocols     []string         `yaml:"protocols"`
+	LocationFlags []string         `yaml:"location_flags"`
+	Executable    string           `yaml:"executable"`
+	Args          []string         `yaml:"args"`
+	ExtraFiles    []string         `yaml:"extra_files"`
 }
 
 type Manifest struct {
