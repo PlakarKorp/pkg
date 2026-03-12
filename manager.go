@@ -275,8 +275,7 @@ func (p *Manager) fetch(url *url.URL, endpoint string, reqauth bool) (*http.Resp
 
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
-		return nil, fmt.Errorf("non-OK status code while fetching: %d %s",
-			resp.StatusCode, resp.Status)
+		return nil, fmt.Errorf("fetch failed with %s", resp.Status)
 	}
 	return resp, nil
 }
