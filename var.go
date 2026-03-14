@@ -17,6 +17,7 @@ const (
 	ResourceClassCompute       ResourceClass = "compute"
 	ResourceClassDatabase      ResourceClass = "database"
 	ResourceClassFileStorage   ResourceClass = "file-storage"
+	ResourceClassHypervisor    ResourceClass = "hypervisor"
 	ResourceClassIdentity      ResourceClass = "identity"
 	ResourceClassMessaging     ResourceClass = "messaging"
 	ResourceClassNetwork       ResourceClass = "network"
@@ -29,6 +30,7 @@ const (
 	ResourceSubClassUnknown   ResourceSubClass = "unknown"
 	ResourceSubClassGCS       ResourceSubClass = "gcs"
 	ResourceSubClassS3        ResourceSubClass = "s3"
+	ResourceSubClassProxmox   ResourceSubClass = "proxmox"
 
 	ConnectorTypeImporter       ConnectorType = "importer"
 	ConnectorTypeExporter       ConnectorType = "exporter"
@@ -71,7 +73,24 @@ var connectorTypes []ConnectorType = []ConnectorType{
 }
 
 var resourceClassTree map[ResourceClass][]ResourceSubClass = map[ResourceClass][]ResourceSubClass{
+	ResourceClassAnalytics:     {},
+	ResourceClassAPI:           {},
+	ResourceClassBlockStorage:  {},
+	ResourceClassCompute:       {},
+	ResourceClassDatabase:      {},
+	ResourceClassFileStorage:   {},
+	ResourceClassHypervisor:    {ResourceSubClassProxmox},
+	ResourceClassIdentity:      {},
+	ResourceClassMessaging:     {},
+	ResourceClassNetwork:       {},
 	ResourceClassObjectStorage: {ResourceSubClassGCS, ResourceSubClassS3},
+	ResourceClassObservability: {},
+	ResourceClassRegistry:      {},
+	ResourceClassSecurity:      {},
+}
+
+func GetClassTree() map[ResourceClass][]ResourceSubClass {
+	return resourceClassTree
 }
 
 func (c ResourceClass) IsValid() bool {
