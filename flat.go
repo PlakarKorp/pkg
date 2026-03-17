@@ -296,5 +296,14 @@ func (f *FlatBackend) Unload(pkg *Package) error {
 		extf      = strings.TrimSuffix(pkg.Filename(), ".ptar")
 		extracted = filepath.Join(f.cachedir, extf)
 	)
+
+	if f.unloadhook != nil {
+		manifest, err := NewManifestFromFile(filepath.Join(extracted, "manifest.yaml"))
+		if err != nil {
+			return err
+		}
+		f.unloadhook(manifest, pkg)
+	}
+
 	return f.unload(pkgfile, extracted)
 }
