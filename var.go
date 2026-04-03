@@ -12,7 +12,6 @@ const (
 	ResourceClassUndefined     ResourceClass = ""
 	ResourceClassUnknown       ResourceClass = "unknown"
 	ResourceClassAnalytics     ResourceClass = "analytics"
-	ResourceClassAPI           ResourceClass = "api"
 	ResourceClassBlockStorage  ResourceClass = "block-storage"
 	ResourceClassCompute       ResourceClass = "compute"
 	ResourceClassDatabase      ResourceClass = "database"
@@ -25,12 +24,21 @@ const (
 	ResourceClassObservability ResourceClass = "observability"
 	ResourceClassRegistry      ResourceClass = "registry"
 	ResourceClassSecurity      ResourceClass = "security"
+	ResourceClassService       ResourceClass = "service"
 
-	ResourceSubClassUndefined ResourceSubClass = ""
-	ResourceSubClassUnknown   ResourceSubClass = "unknown"
-	ResourceSubClassGCS       ResourceSubClass = "gcs"
-	ResourceSubClassS3        ResourceSubClass = "s3"
-	ResourceSubClassProxmox   ResourceSubClass = "proxmox"
+	ResourceSubClassUndefined  ResourceSubClass = ""
+	ResourceSubClassUnknown    ResourceSubClass = "unknown"
+	ResourceSubClassAzBlob     ResourceSubClass = "azblob"
+	ResourceSubClassFTP        ResourceSubClass = "ftp"
+	ResourceSubClassGCS        ResourceSubClass = "gcs"
+	ResourceSubClassIMAP       ResourceSubClass = "imap"
+	ResourceSubClassMongoDB    ResourceSubClass = "mongodb"
+	ResourceSubClassMySQL      ResourceSubClass = "mysql"
+	ResourceSubClassPostgreSQL ResourceSubClass = "postgresql"
+	ResourceSubClassProxmox    ResourceSubClass = "proxmox"
+	ResourceSubClassRedis      ResourceSubClass = "redis"
+	ResourceSubClassS3         ResourceSubClass = "s3"
+	ResourceSubClassSFTP       ResourceSubClass = "sftp"
 
 	ConnectorTypeImporter       ConnectorType = "importer"
 	ConnectorTypeExporter       ConnectorType = "exporter"
@@ -43,7 +51,6 @@ var resourceClasses []ResourceClass = []ResourceClass{
 	ResourceClassUndefined,
 	ResourceClassUnknown,
 	ResourceClassAnalytics,
-	ResourceClassAPI,
 	ResourceClassBlockStorage,
 	ResourceClassCompute,
 	ResourceClassDatabase,
@@ -55,13 +62,23 @@ var resourceClasses []ResourceClass = []ResourceClass{
 	ResourceClassObservability,
 	ResourceClassRegistry,
 	ResourceClassSecurity,
+	ResourceClassService,
 }
 
 var resourceSubClasses []ResourceSubClass = []ResourceSubClass{
 	ResourceSubClassUndefined,
 	ResourceSubClassUnknown,
-	ResourceSubClassS3,
+	ResourceSubClassAzBlob,
+	ResourceSubClassFTP,
 	ResourceSubClassGCS,
+	ResourceSubClassIMAP,
+	ResourceSubClassMongoDB,
+	ResourceSubClassMySQL,
+	ResourceSubClassPostgreSQL,
+	ResourceSubClassProxmox,
+	ResourceSubClassRedis,
+	ResourceSubClassS3,
+	ResourceSubClassSFTP,
 }
 
 var connectorTypes []ConnectorType = []ConnectorType{
@@ -74,19 +91,19 @@ var connectorTypes []ConnectorType = []ConnectorType{
 
 var resourceClassTree map[ResourceClass][]ResourceSubClass = map[ResourceClass][]ResourceSubClass{
 	ResourceClassAnalytics:     {},
-	ResourceClassAPI:           {},
 	ResourceClassBlockStorage:  {},
 	ResourceClassCompute:       {},
-	ResourceClassDatabase:      {},
+	ResourceClassDatabase:      {ResourceSubClassPostgreSQL, ResourceSubClassMySQL, ResourceSubClassMongoDB, ResourceSubClassRedis},
 	ResourceClassFileStorage:   {},
 	ResourceClassHypervisor:    {ResourceSubClassProxmox},
 	ResourceClassIdentity:      {},
 	ResourceClassMessaging:     {},
 	ResourceClassNetwork:       {},
-	ResourceClassObjectStorage: {ResourceSubClassGCS, ResourceSubClassS3},
+	ResourceClassObjectStorage: {ResourceSubClassGCS, ResourceSubClassS3, ResourceSubClassAzBlob},
 	ResourceClassObservability: {},
 	ResourceClassRegistry:      {},
 	ResourceClassSecurity:      {},
+	ResourceClassService:       {ResourceSubClassFTP, ResourceSubClassIMAP, ResourceSubClassSFTP},
 }
 
 func GetClassTree() map[ResourceClass][]ResourceSubClass {
