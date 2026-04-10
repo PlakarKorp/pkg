@@ -34,6 +34,7 @@ const (
 	ResourceSubClassIMAP       ResourceSubClass = "imap"
 	ResourceSubClassMongoDB    ResourceSubClass = "mongodb"
 	ResourceSubClassMySQL      ResourceSubClass = "mysql"
+	ResourceSubClassPVC        ResourceSubClass = "pvc"
 	ResourceSubClassPostgreSQL ResourceSubClass = "postgresql"
 	ResourceSubClassProxmox    ResourceSubClass = "proxmox"
 	ResourceSubClassRedis      ResourceSubClass = "redis"
@@ -74,6 +75,7 @@ var resourceSubClasses []ResourceSubClass = []ResourceSubClass{
 	ResourceSubClassIMAP,
 	ResourceSubClassMongoDB,
 	ResourceSubClassMySQL,
+	ResourceSubClassPVC,
 	ResourceSubClassPostgreSQL,
 	ResourceSubClassProxmox,
 	ResourceSubClassRedis,
@@ -91,7 +93,7 @@ var connectorTypes []ConnectorType = []ConnectorType{
 
 var resourceClassTree map[ResourceClass][]ResourceSubClass = map[ResourceClass][]ResourceSubClass{
 	ResourceClassAnalytics:     {},
-	ResourceClassBlockStorage:  {},
+	ResourceClassBlockStorage:  {ResourceSubClassPVC},
 	ResourceClassCompute:       {},
 	ResourceClassDatabase:      {ResourceSubClassPostgreSQL, ResourceSubClassMySQL, ResourceSubClassMongoDB, ResourceSubClassRedis},
 	ResourceClassFileStorage:   {},
