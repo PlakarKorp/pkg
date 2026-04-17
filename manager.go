@@ -42,6 +42,7 @@ type RequestHook func(*http.Request) error
 var (
 	ErrInvalidOptions        = errors.New("invalid options")
 	ErrAlreadyInstalled      = errors.New("already installed")
+	ErrBadOSArch             = errors.New("OS or architecture don't match the current one")
 	ErrAuthorizationRequired = errors.New("authorization required")
 )
 
@@ -147,6 +148,10 @@ type AddOptions struct {
 	// If target does not point at a .ptar file, attempt to fetch
 	// the pre-packaged plugin from the repository.
 	ImplicitFetch bool
+
+	// Install the package even if the OS and Architecture don't
+	// match.
+	AllowOSArchMismatch bool
 }
 
 func (p *Manager) preadd(name, version string, opts *AddOptions) error {
@@ -229,6 +234,12 @@ func (p *Manager) Add(target string, opts *AddOptions) error {
 	var pkg Package
 	if err := pkg.parseName(base); err != nil {
 		return err
+	}
+
+	if !opts.AllowOSArchMismatch {
+		if pkg.OperatingSystem != runtime.GOOS || pkg.Architecture != runtime.GOARCH {
+			return ErrBadOSArch
+		}
 	}
 
 	if err := p.preadd(pkg.Name, pkg.Version, opts); err != nil {
