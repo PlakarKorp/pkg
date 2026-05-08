@@ -409,7 +409,7 @@ func (p *Manager) Query(opts *QueryOptions) (ret []*Integration, err error) {
 				p.Homepage = plug.Homepage
 				p.Repository = plug.Repository
 				p.License = plug.License
-				p.Tags = p.Tags
+				p.Tags = plug.Tags
 				p.LatestVersion = plug.LatestVersion
 				p.Stage = plug.Stage
 				p.Types = plug.Types
