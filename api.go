@@ -31,27 +31,47 @@ type IntegrationTypes struct {
 	Provider    bool `json:"provider"`
 }
 
+type Protocol struct {
+	Scheme string `json:"scheme"`
+	// TODO add validator
+}
+
+type Connector struct {
+	Type      string     `json:"type"`
+	Protocols []Protocol `json:"protocols"`
+	Class     string     `json:"class"`
+	Subclass  string     `json:"subclass"`
+	// TODO add validator
+}
+
 type Integration struct {
-	Id            string           `json:"id"`
-	Name          string           `json:"name"`
-	DisplayName   string           `json:"display_name"`
-	Description   string           `json:"description"`
-	Homepage      string           `json:"homepage"`
-	Repository    string           `json:"repository"`
-	License       string           `json:"license"`
-	Tags          []string         `json:"tags"`
-	APIVersion    string           `json:"api_version"`
-	LatestVersion string           `json:"latest_version"`
-	Stage         string           `json:"stage"`
-	Types         IntegrationTypes `json:"types"`
+	Edition       string      `json:"edition"`
+	API           string      `json:"api"`
+	Tier          string      `json:"tier"`
+	Contact       string      `json:"contact"`
+	Name          string      `json:"name"`
+	DisplayName   string      `json:"display_name"`
+	Description   string      `json:"description"`
+	Homepage      string      `json:"homepage"`
+	Repository    string      `json:"repository"`
+	License       string      `json:"license"`
+	Tags          []string    `json:"tags"`
+	Version       string      `json:"version"`
+	Connectors    []Connector `json:"connectors"`
+	Documentation string      `json:"documentation"`
 
-	Documentation string `json:"documentation"` // README.md
-	Icon          string `json:"icon"`          // assets/icon.{png,svg}
-	Featured      string `json:"featured"`      // assets/featured.{png,svg}
+	/*
+	   Stage   string           `json:"stage"`
+	   Types   IntegrationTypes `json:"types"`
+	   Version string           `json:"version"`
 
-	Installation IntegrationInstallation `json:"installation"`
+	   Icon          string `json:"icon"`          // assets/icon.{png,svg}
+	   Featured      string `json:"featured"`      // assets/featured.{png,svg}
+
+	   Installation IntegrationInstallation `json:"installation"`
+	*/
 }
 
 type IntegrationIndex struct {
-	Plugins []Integration `json:"integrations"`
+	Integrations []Integration `json:"integrations"`
 }

@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -271,6 +272,8 @@ func (p *Manager) fetch(url *url.URL, endpoint string, reqauth bool) (*http.Resp
 		}
 	}
 
+	log.Println("about to get", u.String())
+
 	if reqauth && req.Header.Get("Authorization") == "" {
 		return nil, ErrAuthorizationRequired
 	}
@@ -377,7 +380,7 @@ func (p *Manager) Query(opts *QueryOptions) (ret []*Integration, err error) {
 			Name:        p.Name,
 			DisplayName: p.Name,
 			Tags:        []string{},
-			APIVersion:  PLUGIN_API_VERSION,
+			API:         PLUGIN_API_VERSION,
 			Installation: IntegrationInstallation{
 				Status:  "installed",
 				Version: p.Version,
@@ -386,7 +389,7 @@ func (p *Manager) Query(opts *QueryOptions) (ret []*Integration, err error) {
 	}
 
 	if !opts.OnlyLocal {
-		endp := "v1/integrations/" + PLUGIN_API_VERSION + ".json"
+		endp := "v1/integrations/integrations-v1.0.0.json"
 		res, err := p.fetch(p.api, endp, false)
 		if err != nil {
 			return nil, err
@@ -399,8 +402,13 @@ func (p *Manager) Query(opts *QueryOptions) (ret []*Integration, err error) {
 			return nil, err
 		}
 
-		for i := range index.Plugins {
-			plug := &index.Plugins[i]
+		for i := range index.Integrations {
+			plug := &index.Integrations[i]
+
+			if plug.API != PLUGIN_API_VERSION {
+				continue
+			}
+			log.Printf("found %s/%s", plug.Name, plug.Version)
 
 			if p, ok := packages[plug.Id]; ok {
 				p.Id = plug.Id
@@ -416,6 +424,7 @@ func (p *Manager) Query(opts *QueryOptions) (ret []*Integration, err error) {
 				p.Documentation = plug.Documentation
 				p.Icon = plug.Icon
 				p.Featured = plug.Featured
+				p.Version = plug.Version
 
 				p.Installation.Available = true
 			} else {
