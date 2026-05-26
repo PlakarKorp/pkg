@@ -23,6 +23,7 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -56,6 +57,24 @@ func (recipe *Recipe) Parse(rd io.Reader) error {
 	return yaml.NewDecoder(rd).Decode(recipe)
 }
 
+func (recipe *Recipe) Tag() string {
+	return recipe.Version
+}
+
+func (recipe *Recipe) Semver() string {
+	if i := strings.LastIndex(recipe.Version, "/"); i >= 0 {
+		return recipe.Version[i+1:]
+	}
+	return recipe.Version
+}
+
+func (recipe *Recipe) Subdir() string {
+	if i := strings.LastIndex(recipe.Version, "/"); i >= 0 {
+		return recipe.Version[:i]
+	}
+	return "."
+}
+
 // xxx unused
 func (recipe *Recipe) PkgName() string {
 	GOOS := runtime.GOOS
@@ -67,5 +86,5 @@ func (recipe *Recipe) PkgName() string {
 		GOARCH = goarchEnv
 	}
 
-	return fmt.Sprintf("%s_%s_%s_%s.ptar", recipe.Name, recipe.Version, GOOS, GOARCH)
+	return fmt.Sprintf("%s_%s_%s_%s.ptar", recipe.Name, recipe.Semver(), GOOS, GOARCH)
 }
