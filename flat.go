@@ -28,7 +28,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	fsexporter "github.com/PlakarKorp/integration-fs/exporter"
+	fsexporter "github.com/PlakarKorp/integrations/fs/exporter"
 	_ "github.com/PlakarKorp/integration-ptar/storage"
 	"github.com/PlakarKorp/kloset/connectors"
 	"github.com/PlakarKorp/kloset/connectors/storage"
