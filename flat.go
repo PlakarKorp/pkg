@@ -29,7 +29,7 @@ import (
 	"strings"
 
 	fsexporter "github.com/PlakarKorp/integrations/fs/exporter"
-	_ "github.com/PlakarKorp/integration-ptar/storage"
+	_ "github.com/PlakarKorp/integrations/ptar/storage"
 	"github.com/PlakarKorp/kloset/connectors"
 	"github.com/PlakarKorp/kloset/connectors/storage"
 	"github.com/PlakarKorp/kloset/kcontext"
