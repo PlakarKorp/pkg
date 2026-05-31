@@ -221,7 +221,7 @@ func (p *Manager) Add(target string, opts *AddOptions) error {
 			if err != nil {
 				return err
 			}
-			name, version = r.Name, r.Version
+			name, version = r.Name, r.Semver()
 		}
 
 		if err := p.preadd(name, version, opts); err != nil {
