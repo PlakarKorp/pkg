@@ -36,6 +36,7 @@ import (
 )
 
 const PLUGIN_API_VERSION = "v1.1.0"
+const PLUGIN_BUNDLE_VERSION = "v1.0.0"
 
 type RequestHook func(*http.Request) error
 
@@ -351,9 +352,10 @@ func (p *Manager) Del(target string, opts *DelOptions) error {
 }
 
 type QueryOptions struct {
-	Type   string
-	Tag    string
-	Status string
+	Type    string
+	Tag     string
+	Status  string
+	Edition string
 
 	OnlyLocal bool
 }
@@ -361,6 +363,11 @@ type QueryOptions struct {
 func (p *Manager) Query(opts *QueryOptions) (ret []*Integration, err error) {
 	if opts == nil {
 		opts = &QueryOptions{}
+	}
+
+	edition := opts.Edition
+	if edition == "" {
+		edition = "community"
 	}
 
 	packages := make(map[string]*Integration)
@@ -377,7 +384,7 @@ func (p *Manager) Query(opts *QueryOptions) (ret []*Integration, err error) {
 			Name:        p.Name,
 			DisplayName: p.Name,
 			Tags:        []string{},
-			APIVersion:  PLUGIN_API_VERSION,
+			API:         PLUGIN_API_VERSION,
 			Installation: IntegrationInstallation{
 				Status:  "installed",
 				Version: p.Version,
@@ -386,7 +393,7 @@ func (p *Manager) Query(opts *QueryOptions) (ret []*Integration, err error) {
 	}
 
 	if !opts.OnlyLocal {
-		endp := "v1/integrations/" + PLUGIN_API_VERSION + ".json"
+		endp := "v1/integrations/integrations-" + PLUGIN_BUNDLE_VERSION + ".json"
 		res, err := p.fetch(p.api, endp, false)
 		if err != nil {
 			return nil, err
@@ -399,8 +406,35 @@ func (p *Manager) Query(opts *QueryOptions) (ret []*Integration, err error) {
 			return nil, err
 		}
 
-		for i := range index.Plugins {
-			plug := &index.Plugins[i]
+		for i := range index.Integrations {
+			plug := &index.Integrations[i]
+
+			if plug.API != PLUGIN_API_VERSION {
+				continue
+			}
+			if plug.Edition != edition {
+				continue
+			}
+
+			// Set compatibility fields for the former model
+			plug.Id = plug.Name
+			plug.LatestVersion = plug.Version
+			pr := semver.Prerelease(plug.Version)
+			switch {
+			case pr == "":
+				plug.Stage = "stable"
+			case strings.HasPrefix(pr, "-devel."):
+				plug.Stage = "devel"
+			case strings.HasPrefix(pr, "-beta."):
+				plug.Stage = "beta"
+			case strings.HasPrefix(pr, "-rc."):
+				plug.Stage = "pre-release"
+			default:
+				plug.Stage = pr
+			}
+			plug.Types.Destination = plug.HasConnectorType("exporter")
+			plug.Types.Source = plug.HasConnectorType("importer")
+			plug.Types.Storage = plug.HasConnectorType("storage")
 
 			if p, ok := packages[plug.Id]; ok {
 				p.Id = plug.Id

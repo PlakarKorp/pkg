@@ -18,6 +18,8 @@
 
 package pkg
 
+import "time"
+
 type IntegrationInstallation struct {
 	Status    string `json:"status"`
 	Version   string `json:"version,omitempty"`
@@ -31,27 +33,56 @@ type IntegrationTypes struct {
 	Provider    bool `json:"provider"`
 }
 
+type Protocol struct {
+	Scheme    string `json:"scheme"`    // sftp, s3, http, ...
+	Validator any    `json:"validator"` // json schema, override connector schema if defined
+}
+
+type Connector struct {
+	Type      string     `json:"type"` // importer, exporter, storage
+	Protocols []Protocol `json:"protocols"`
+	Class     string     `json:"class"`
+	SubClass  string     `json:"subclass"`
+	Validator any        `json:"validator"` // json schema
+}
+
 type Integration struct {
-	Id            string           `json:"id"`
-	Name          string           `json:"name"`
-	DisplayName   string           `json:"display_name"`
-	Description   string           `json:"description"`
-	Homepage      string           `json:"homepage"`
-	Repository    string           `json:"repository"`
-	License       string           `json:"license"`
-	Tags          []string         `json:"tags"`
-	APIVersion    string           `json:"api_version"`
-	LatestVersion string           `json:"latest_version"`
-	Stage         string           `json:"stage"`
-	Types         IntegrationTypes `json:"types"`
+	Edition string `json:"edition"`
+	API     string `json:"api"`
 
-	Documentation string `json:"documentation"` // README.md
-	Icon          string `json:"icon"`          // assets/icon.{png,svg}
-	Featured      string `json:"featured"`      // assets/featured.{png,svg}
+	Tier          string      `json:"tier"`
+	Contact       string      `json:"contact"`
+	Name          string      `json:"name"`
+	DisplayName   string      `json:"display_name"`
+	Description   string      `json:"description"`
+	Homepage      string      `json:"homepage"`
+	Repository    string      `json:"repository"`
+	License       string      `json:"license"`
+	Tags          []string    `json:"tags"`
+	Version       string      `json:"version"` // integration version
+	Connectors    []Connector `json:"connectors"`
+	Documentation string      `json:"documentation"` // README.md
+	Icon          string      `json:"icon"`          // assets/icon.{png,svg}
+	Featured      string      `json:"featured"`      // assets/featured.{png,svg}
 
-	Installation IntegrationInstallation `json:"installation"`
+	Id            string                  `json:"id"`
+	Types         IntegrationTypes        `json:"types"`
+	Stage         string                  `json:"stage"`
+	Installation  IntegrationInstallation `json:"installation"`
+	LatestVersion string                  `json:"latest_version"`
 }
 
 type IntegrationIndex struct {
-	Plugins []Integration `json:"integrations"`
+	Version      string        `json:"version"`
+	Timestamp    time.Time     `json:"timestamp"`
+	Integrations []Integration `json:"integrations"`
+}
+
+func (int *Integration) HasConnectorType(ct string) bool {
+	for i := range int.Connectors {
+		if int.Connectors[i].Type == ct {
+			return true
+		}
+	}
+	return false
 }
