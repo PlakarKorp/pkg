@@ -428,7 +428,7 @@ func (p *Manager) Query(opts *QueryOptions) (ret []*Integration, err error) {
 			case strings.HasPrefix(pr, "-beta."):
 				plug.Stage = "beta"
 			case strings.HasPrefix(pr, "-rc."):
-				plug.Stage = "pre-release"
+				plug.Stage = "testing"
 			default:
 				plug.Stage = pr
 			}
