@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"iter"
 	"os"
 	"path/filepath"
@@ -283,8 +282,8 @@ func (f *FlatBackend) LoadAll() error {
 func (f *FlatBackend) unload(pkgfile, extracted string) error {
 	err := os.Remove(pkgfile)
 	if extracted != "" {
-		if e := os.RemoveAll(extracted); err == nil && !errors.Is(e, fs.ErrNotExist) {
-			err = e
+		if err := os.RemoveAll(extracted); err != nil {
+			return err
 		}
 	}
 	return err
