@@ -106,7 +106,7 @@ var resourceClassTree map[ResourceClass][]ResourceSubClass = map[ResourceClass][
 	ResourceClassObjectStorage: {ResourceSubClassGCS, ResourceSubClassS3, ResourceSubClassAzBlob},
 	ResourceClassObservability: {},
 	ResourceClassRegistry:      {},
-	ResourceClassSecurity:      {ResourceSubClassSecret},
+	ResourceClassSecurity:      {ResourceSubClassSecretManager},
 	ResourceClassService:       {ResourceSubClassFTP, ResourceSubClassIMAP, ResourceSubClassSFTP},
 }
 
