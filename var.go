@@ -39,6 +39,7 @@ const (
 	ResourceSubClassProxmox    ResourceSubClass = "proxmox"
 	ResourceSubClassRedis      ResourceSubClass = "redis"
 	ResourceSubClassS3         ResourceSubClass = "s3"
+	ResourceSubClassSecret     ResourceSubClass = "secret"
 	ResourceSubClassSFTP       ResourceSubClass = "sftp"
 
 	ConnectorTypeImporter       ConnectorType = "importer"
@@ -104,7 +105,7 @@ var resourceClassTree map[ResourceClass][]ResourceSubClass = map[ResourceClass][
 	ResourceClassObjectStorage: {ResourceSubClassGCS, ResourceSubClassS3, ResourceSubClassAzBlob},
 	ResourceClassObservability: {},
 	ResourceClassRegistry:      {},
-	ResourceClassSecurity:      {},
+	ResourceClassSecurity:      {ResourceSubClassSecret},
 	ResourceClassService:       {ResourceSubClassFTP, ResourceSubClassIMAP, ResourceSubClassSFTP},
 }
 
