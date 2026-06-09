@@ -172,15 +172,19 @@ func (p *Manager) preadd(name, version string, opts *AddOptions) error {
 			return ErrAlreadyInstalled
 		}
 
-		cmp := semver.Compare(version, pkg.Version)
-		if cmp == 0 && !opts.Replace {
-			return ErrAlreadyInstalled
-		}
-		if cmp < 0 && !opts.Downgrade {
-			return ErrAlreadyInstalled
-		}
-		if cmp > 0 && !opts.Upgrade {
-			return ErrAlreadyInstalled
+		// Replace removes whatever other version is present,
+		// regardless of how it compares to the requested one.
+		if !opts.Replace {
+			cmp := semver.Compare(version, pkg.Version)
+			if cmp == 0 {
+				return ErrAlreadyInstalled
+			}
+			if cmp < 0 && !opts.Downgrade {
+				return ErrAlreadyInstalled
+			}
+			if cmp > 0 && !opts.Upgrade {
+				return ErrAlreadyInstalled
+			}
 		}
 
 		if err := p.store.Unload(pkg); err != nil {

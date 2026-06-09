@@ -125,6 +125,10 @@ func (f *FlatBackend) extract(destDir, ptar string) error {
 	if err != nil {
 		return err
 	}
+	// Close the store before returning so the underlying handle on the
+	// .ptar file is released. On Windows an open handle prevents the
+	// caller from linking or renaming the file ("Access is denied").
+	defer store.Close(f.kcontext)
 
 	repo, err := repository.New(f.kcontext, nil, store, serializedConfig)
 	if err != nil {
@@ -231,8 +235,12 @@ func (f *FlatBackend) Load(pkg *Package, rd io.Reader) error {
 		}
 	}
 
+	// Rename rather than hard-link the temp file into place: the temp
+	// file already lives in f.pkgdir, so this is atomic, and os.Rename is
+	// far more portable than os.Link, which fails on Windows on
+	// filesystems or setups that don't support hard links.
 	pkgdir := filepath.Join(f.pkgdir, pkg.Filename())
-	if err := os.Link(fp.Name(), pkgdir); err != nil {
+	if err := os.Rename(fp.Name(), pkgdir); err != nil {
 		f.unload(fp.Name(), extracted)
 		return err
 	}

@@ -57,6 +57,7 @@ var resourceClasses []ResourceClass = []ResourceClass{
 	ResourceClassCompute,
 	ResourceClassDatabase,
 	ResourceClassFileStorage,
+	ResourceClassHypervisor,
 	ResourceClassIdentity,
 	ResourceClassMessaging,
 	ResourceClassNetwork,
