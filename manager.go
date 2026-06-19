@@ -330,6 +330,10 @@ type DelOptions struct {
 	// If target is the empty string, delete all the packages
 	// installed.
 	All bool
+
+	// If version is not the empty string, delete only the given
+	// version.  It's incompatible with All.
+	Version string
 }
 
 // Del uninstalls all matching packages.
@@ -342,9 +346,17 @@ func (p *Manager) Del(target string, opts *DelOptions) error {
 		return ErrBadPackageName
 	}
 
+	if opts.All && opts.Version != "" {
+		return ErrInvalidOptions
+	}
+
 	for pkg, err := range p.store.List(target) {
 		if err != nil {
 			return err
+		}
+
+		if opts.Version != "" && pkg.Version != opts.Version {
+			continue
 		}
 
 		if err := p.store.Unload(pkg); err != nil {
