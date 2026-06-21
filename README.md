@@ -1,6 +1,7 @@
 # pkg
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/PlakarKorp/pkg.svg)](https://pkg.go.dev/github.com/PlakarKorp/pkg)
+[![Go Report Card](https://goreportcard.com/badge/github.com/PlakarKorp/pkg)](https://goreportcard.com/report/github.com/PlakarKorp/pkg)
 [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](LICENSE)
 
 pkg is the Plakar package manager, extracted to its own repo for
