@@ -136,6 +136,9 @@ func (f *FlatBackend) extract(destDir, ptar string) error {
 
 	locopts := locate.NewDefaultLocateOptions()
 	snapids, err := locate.LocateSnapshotIDs(repo, locopts)
+	if err != nil {
+		return fmt.Errorf("failed to list snapshots: %w", err)
+	}
 	if len(snapids) != 1 {
 		return fmt.Errorf("too many snapshot in ptar plugin: %d",
 			len(snapids))
