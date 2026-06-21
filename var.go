@@ -83,6 +83,7 @@ var resourceSubClasses []ResourceSubClass = []ResourceSubClass{
 	ResourceSubClassRedis,
 	ResourceSubClassS3,
 	ResourceSubClassSFTP,
+	ResourceSubClassSecretManager,
 }
 
 var connectorTypes []ConnectorType = []ConnectorType{
