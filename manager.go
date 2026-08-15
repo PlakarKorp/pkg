@@ -19,9 +19,11 @@
 package pkg
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"iter"
 	"net/http"
 	"net/url"
@@ -54,6 +56,7 @@ type Manager struct {
 	reqhook         RequestHook
 	binaryNeedsAuth bool
 	useragent       string
+	verifier        Verifier
 }
 
 type Options struct {
@@ -66,6 +69,10 @@ type Options struct {
 	// InstallURL.  "(os/architecture)" will be appended
 	// implicitly.
 	UserAgent string
+
+	// Verifier decides whether an artifact may be installed. When nil,
+	// nothing is verified and no signature is fetched.
+	Verifier Verifier
 }
 
 // WithBearer adds an Authorization header with the Bearer token
@@ -96,6 +103,7 @@ func New(store Backend, opts *Options) (*Manager, error) {
 		useragent:       opts.UserAgent,
 		binaryNeedsAuth: opts.BinaryNeedsAuth,
 		reqhook:         opts.RequestHook,
+		verifier:        opts.Verifier,
 	}
 
 	if opts.InstallURL != "" {
@@ -257,7 +265,18 @@ func (p *Manager) Add(target string, opts *AddOptions) error {
 	}
 	defer fp.Close()
 
-	return p.store.Load(&pkg, fp)
+	// A local artifact carries its signature as a sibling file.
+	sig, err := os.ReadFile(target + sigSuffix)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	rd, err := p.verify(pkg.Filename(), &pkg, LocalOrigin, sig, fp)
+	if err != nil {
+		return err
+	}
+
+	return p.store.Load(&pkg, rd)
 }
 
 func (p *Manager) fetch(url *url.URL, endpoint string, reqauth bool) (*http.Response, error) {
@@ -293,19 +312,78 @@ func (p *Manager) fetch(url *url.URL, endpoint string, reqauth bool) (*http.Resp
 }
 
 func (p *Manager) FetchRecipe(name string) (*Recipe, error) {
-	s := path.Join(PLUGIN_API_VERSION, name, "recipe.yaml")
+	const filename = "recipe.yaml"
+
+	// A recipe resolves which version gets installed, so it must be
+	// verified before it is parsed.
+	sig, err := p.fetchsig(path.Join(PLUGIN_API_VERSION, name, filename))
+	if err != nil {
+		return nil, err
+	}
+
+	s := path.Join(PLUGIN_API_VERSION, name, filename)
 	resp, err := p.fetch(p.repository, s, false)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
+	rd, err := p.verify(filename, nil, p.repository.String(), sig, resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
 	var recipe Recipe
-	if err := recipe.Parse(resp.Body); err != nil {
+	if err := recipe.Parse(rd); err != nil {
 		return nil, err
 	}
 
 	return &recipe, nil
+}
+
+// fetchsig retrieves the .sum.sig accompanying the file at endpoint. A missing
+// signature yields a nil slice, leaving it to the Verifier to decide what an
+// unsigned file means.
+func (p *Manager) fetchsig(endpoint string) ([]byte, error) {
+	if p.verifier == nil {
+		return nil, nil
+	}
+
+	resp, err := p.fetch(p.repository, endpoint+sigSuffix, false)
+	if err != nil {
+		return nil, nil
+	}
+	defer resp.Body.Close()
+
+	return io.ReadAll(io.LimitReader(resp.Body, maxSignatureSize))
+}
+
+// verify runs the configured Verifier over rd, returning a reader over the
+// verified content. rd is returned unchanged when no Verifier is configured.
+func (p *Manager) verify(filename string, pkg *Package, origin string, sig []byte, rd io.Reader) (io.Reader, error) {
+	if p.verifier == nil {
+		return rd, nil
+	}
+
+	artifact := &Artifact{
+		Filename:  filename,
+		Package:   pkg,
+		Origin:    origin,
+		Signature: sig,
+	}
+
+	// Buffered because both the Verifier and Load need to read it, and rd
+	// is not seekable.
+	content, err := io.ReadAll(rd)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := p.verifier.Verify(artifact, bytes.NewReader(content)); err != nil {
+		return nil, err
+	}
+
+	return bytes.NewReader(content), nil
 }
 
 func (p *Manager) fetchbinary(name, version string) error {
@@ -317,13 +395,26 @@ func (p *Manager) fetchbinary(name, version string) error {
 	}
 
 	s := path.Join(PLUGIN_API_VERSION, name, pkg.Filename())
+
+	// Fetched first, so a missing signature fails before pulling down tens
+	// of megabytes.
+	sig, err := p.fetchsig(s)
+	if err != nil {
+		return err
+	}
+
 	resp, err := p.fetch(p.repository, s, p.binaryNeedsAuth)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	return p.store.Load(&pkg, resp.Body)
+	rd, err := p.verify(pkg.Filename(), &pkg, p.repository.String(), sig, resp.Body)
+	if err != nil {
+		return err
+	}
+
+	return p.store.Load(&pkg, rd)
 }
 
 type DelOptions struct {
