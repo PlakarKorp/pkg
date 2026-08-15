@@ -20,6 +20,7 @@ type fakeBackend struct {
 	pkgs     []*Package
 	loaded   []*Package // packages passed to Load, with their bytes
 	loadData map[string][]byte
+	loadSigs map[string][]byte
 	unloaded []*Package
 
 	listErr   error
@@ -28,7 +29,11 @@ type fakeBackend struct {
 }
 
 func newFakeBackend(pkgs ...*Package) *fakeBackend {
-	return &fakeBackend{pkgs: pkgs, loadData: map[string][]byte{}}
+	return &fakeBackend{
+		pkgs:     pkgs,
+		loadData: map[string][]byte{},
+		loadSigs: map[string][]byte{},
+	}
 }
 
 func (f *fakeBackend) List(name string) iter.Seq2[*Package, error] {
@@ -51,7 +56,7 @@ func (f *fakeBackend) List(name string) iter.Seq2[*Package, error] {
 	}
 }
 
-func (f *fakeBackend) Load(p *Package, rd io.Reader) error {
+func (f *fakeBackend) Load(p *Package, rd io.Reader, sig []byte) error {
 	if f.loadErr != nil {
 		return f.loadErr
 	}
@@ -62,8 +67,15 @@ func (f *fakeBackend) Load(p *Package, rd io.Reader) error {
 	cp := *p
 	f.loaded = append(f.loaded, &cp)
 	f.loadData[cp.Filename()] = b
+	if sig != nil {
+		f.loadSigs[cp.Filename()] = sig
+	}
 	f.pkgs = append(f.pkgs, &cp)
 	return nil
+}
+
+func (f *fakeBackend) Signature(p *Package) ([]byte, error) {
+	return f.loadSigs[p.Filename()], nil
 }
 
 func (f *fakeBackend) Unload(p *Package) error {

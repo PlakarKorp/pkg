@@ -203,7 +203,7 @@ func (f *FlatBackend) loadmanifest(mpath string) (*Manifest, error) {
 	return m, nil
 }
 
-func (f *FlatBackend) Load(pkg *Package, rd io.Reader) error {
+func (f *FlatBackend) Load(pkg *Package, rd io.Reader, sig []byte) error {
 	fp, err := os.CreateTemp(f.pkgdir, "."+pkg.Name+"-*")
 	if err != nil {
 		return err
@@ -247,11 +247,36 @@ func (f *FlatBackend) Load(pkg *Package, rd io.Reader) error {
 		return err
 	}
 
+	// Retained so an installed package can be re-checked later, and so
+	// its provenance can be reported without the network.
+	if sig != nil {
+		if err := os.WriteFile(f.sigpath(pkg), sig, 0644); err != nil {
+			f.unload(pkgdir, extracted)
+			return err
+		}
+	}
+
 	if f.loadhook != nil {
 		f.loadhook(m, pkg, extracted)
 	}
 
 	return nil
+}
+
+func (f *FlatBackend) sigpath(pkg *Package) string {
+	return filepath.Join(f.pkgdir, pkg.Filename()+sigSuffix)
+}
+
+func (f *FlatBackend) Signature(pkg *Package) ([]byte, error) {
+	sig, err := os.ReadFile(f.sigpath(pkg))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return sig, nil
 }
 
 func (f *FlatBackend) reload(pkg *Package) error {
@@ -292,6 +317,13 @@ func (f *FlatBackend) LoadAll() error {
 
 func (f *FlatBackend) unload(pkgfile, extracted string) error {
 	err := os.Remove(pkgfile)
+
+	// Removed too, so a later install of the same version cannot inherit
+	// the previous one's signature.
+	if rmerr := os.Remove(pkgfile + sigSuffix); rmerr != nil && !os.IsNotExist(rmerr) {
+		return rmerr
+	}
+
 	if extracted != "" {
 		if err := os.RemoveAll(extracted); err != nil {
 			return err
