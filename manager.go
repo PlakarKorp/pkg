@@ -134,6 +134,12 @@ func (p *Manager) List() iter.Seq2[*Package, error] {
 	return p.store.List("")
 }
 
+// Signature returns the retained signature of an installed package, or nil if
+// it was installed without one.
+func (p *Manager) Signature(pkg *Package) ([]byte, error) {
+	return p.store.Signature(pkg)
+}
+
 type AddOptions struct {
 	// The version to install, if given.  Otherwise, the latest
 	// version available will be used.
@@ -276,7 +282,7 @@ func (p *Manager) Add(target string, opts *AddOptions) error {
 		return err
 	}
 
-	return p.store.Load(&pkg, rd)
+	return p.store.Load(&pkg, rd, sig)
 }
 
 func (p *Manager) fetch(url *url.URL, endpoint string, reqauth bool) (*http.Response, error) {
@@ -414,7 +420,7 @@ func (p *Manager) fetchbinary(name, version string) error {
 		return err
 	}
 
-	return p.store.Load(&pkg, rd)
+	return p.store.Load(&pkg, rd, sig)
 }
 
 type DelOptions struct {

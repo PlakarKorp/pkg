@@ -29,8 +29,13 @@ type Backend interface {
 	// the given name, or an error.
 	List(name string) iter.Seq2[*Package, error]
 
-	// Load a plugin' ptar from the given reader.
-	Load(*Package, io.Reader) error
+	// Load a plugin' ptar from the given reader. sig is the artifact's
+	// signature, retained alongside it, or nil if it has none.
+	Load(pkg *Package, rd io.Reader, sig []byte) error
+
+	// Signature returns the retained signature of an installed package,
+	// or nil if it was installed without one.
+	Signature(*Package) ([]byte, error)
 
 	// Unload a plugin
 	Unload(*Package) error
