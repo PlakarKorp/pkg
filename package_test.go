@@ -24,6 +24,21 @@ func TestPackageParseNameValid(t *testing.T) {
 	}
 }
 
+func TestPackageParseNameContainer(t *testing.T) {
+	// Container packages use OSContainer as their OS atom, keeping the
+	// regular 4-atom name format.
+	var p Package
+	if err := p.parseName("s3_v1.2.3_oci_amd64.ptar"); err != nil {
+		t.Fatalf("parseName: %v", err)
+	}
+	if p.OperatingSystem != OSContainer {
+		t.Errorf("OperatingSystem = %q, want oci", p.OperatingSystem)
+	}
+	if got, want := p.Filename(), "s3_v1.2.3_oci_amd64.ptar"; got != want {
+		t.Errorf("Filename = %q, want %q", got, want)
+	}
+}
+
 func TestPackageParseNameErrors(t *testing.T) {
 	tests := []struct {
 		name string

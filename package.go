@@ -30,6 +30,10 @@ var (
 	ErrBadPackageName = errors.New("invalid package name")
 )
 
+// OSContainer is the OperatingSystem of container-flavored packages: they
+// carry an image pin instead of executables and run on any linux host.
+const OSContainer = "oci"
+
 type Package struct {
 	Name            string
 	Version         string
