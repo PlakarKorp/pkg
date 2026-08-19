@@ -31,14 +31,21 @@ import (
 
 type ManifestConnector struct {
 	Type          ConnectorType    `yaml:"type"`
-	Class         ResourceClass    `yaml:"class"`
-	SubClass      ResourceSubClass `yaml:"subclass"`
-	Validator     string           `yaml:"validator"`
+	Class         ResourceClass    `yaml:"class,omitempty"`
+	SubClass      ResourceSubClass `yaml:"subclass,omitempty"`
+	Validator     string           `yaml:"validator,omitempty"`
 	Protocols     []string         `yaml:"protocols"`
-	LocationFlags []string         `yaml:"location_flags"`
-	Executable    string           `yaml:"executable"`
-	Args          []string         `yaml:"args"`
-	ExtraFiles    []string         `yaml:"extra_files"`
+	LocationFlags []string         `yaml:"location_flags,omitempty"`
+	Executable    string           `yaml:"executable,omitempty"`
+	Args          []string         `yaml:"args,omitempty"`
+	ExtraFiles    []string         `yaml:"extra_files,omitempty"`
+
+	// Containerized connectors carry an image pin instead of an executable.
+	// ImageID is the sha256 of the image, filled at package creation time
+	// following a docker build.
+	// Image is registry reference to pull from when install pre-built packages.
+	ImageID string `yaml:"image_id,omitempty"`
+	Image   string `yaml:"image,omitempty"`
 }
 
 type Manifest struct {
@@ -128,4 +135,28 @@ func (conn *ManifestConnector) Flags() (flags location.Flags, err error) {
 		flags |= f
 	}
 	return
+}
+
+func (conn *ManifestConnector) Validate() error {
+	flags, err := conn.Flags()
+	if err != nil {
+		return err
+	}
+
+	if (conn.Executable == "") == (conn.ImageID == "") {
+		return fmt.Errorf("connector must set exactly one of executable and image_id")
+	}
+
+	if conn.ImageID == "" {
+		if conn.Image != "" {
+			return fmt.Errorf("image requires image_id")
+		}
+		return nil
+	}
+
+	if flags&location.FLAG_LOCALFS != 0 {
+		return fmt.Errorf("localfs connectors cannot run as containers")
+	}
+
+	return nil
 }
