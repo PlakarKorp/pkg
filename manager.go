@@ -167,6 +167,11 @@ type AddOptions struct {
 	// Install the package even if the OS and Architecture don't
 	// match.
 	AllowOSArchMismatch bool
+
+	// Install the container flavor when fetching from the repository: the
+	// package whose OS atom is OSContainer, carrying an image pin instead
+	// of executables. Local .ptar files carry it in the filename instead.
+	Container bool
 }
 
 func (p *Manager) preadd(name, version string, opts *AddOptions) error {
@@ -247,7 +252,7 @@ func (p *Manager) Add(target string, opts *AddOptions) error {
 			return err
 		}
 
-		return p.fetchbinary(name, version)
+		return p.fetchbinary(name, version, opts.Container)
 	}
 
 	var pkg Package
@@ -256,7 +261,13 @@ func (p *Manager) Add(target string, opts *AddOptions) error {
 	}
 
 	if !opts.AllowOSArchMismatch {
-		if pkg.OperatingSystem != runtime.GOOS || pkg.Architecture != runtime.GOARCH {
+		// Container packages are not tied to the host OS; they run on any
+		// linux host with a container runtime.
+		goos := pkg.OperatingSystem
+		if goos == OSContainer {
+			goos = "linux"
+		}
+		if goos != runtime.GOOS || pkg.Architecture != runtime.GOARCH {
 			return ErrBadOSArch
 		}
 	}
@@ -392,12 +403,17 @@ func (p *Manager) verify(filename string, pkg *Package, origin string, sig []byt
 	return bytes.NewReader(content), nil
 }
 
-func (p *Manager) fetchbinary(name, version string) error {
+func (p *Manager) fetchbinary(name, version string, container bool) error {
+	goos := runtime.GOOS
+	if container {
+		goos = OSContainer
+	}
+
 	pkg := Package{
 		Name:            name,
 		Version:         version,
 		Architecture:    runtime.GOARCH,
-		OperatingSystem: runtime.GOOS,
+		OperatingSystem: goos,
 	}
 
 	s := path.Join(PLUGIN_API_VERSION, name, pkg.Filename())
