@@ -117,6 +117,30 @@ func (f *FlatBackend) List(name string) iter.Seq2[*Package, error] {
 	}
 }
 
+func (f *FlatBackend) installSignature(pkg *Package, sig []byte) error {
+	tmp, err := os.CreateTemp(f.pkgdir, "signature*")
+	if err != nil {
+		return err
+	}
+	if _, err := tmp.Write(sig); err != nil {
+		tmp.Close()
+		os.Remove(tmp.Name())
+		return err
+	}
+
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmp.Name())
+		return err
+	}
+
+	if err := os.Rename(tmp.Name(), f.sigpath(pkg)); err != nil {
+		os.Remove(tmp.Name())
+		return err
+	}
+
+	return nil
+}
+
 func (f *FlatBackend) extract(destDir, ptar string) error {
 	store, serializedConfig, err := storage.Open(f.kcontext, map[string]string{
 		"location": "ptar://" + ptar,
@@ -237,10 +261,8 @@ func (f *FlatBackend) Load(pkg *Package, rd io.Reader, sig []byte) error {
 		}
 	}
 
-	// Retained so an installed package can be re-checked later, and so
-	// its provenance can be reported without the network.
 	if sig != nil {
-		if err := os.WriteFile(f.sigpath(pkg), sig, 0644); err != nil {
+		if err := f.installSignature(pkg, sig); err != nil {
 			f.unload(fp.Name(), extracted)
 			return err
 		}
