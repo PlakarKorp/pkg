@@ -44,14 +44,22 @@ type FlatBackend struct {
 	cachedir string
 
 	preloadhook func(*Manifest) error
+	installhook func(*Manifest) error
 	loadhook    func(*Manifest, *Package, string)
 	unloadhook  func(*Manifest, *Package)
 }
 
 type FlatBackendOptions struct {
 	PreLoadHook func(*Manifest) error
-	LoadHook    func(*Manifest, *Package, string)
-	UnloadHook  func(*Manifest, *Package)
+
+	// InstallHook runs once per package at install time, after the manifest
+	// passed validation and before the package is enabled, giving the
+	// consumer a chance to fulfill external prerequisites (e.g. pull the
+	// the image for a container package). An error aborts the install.
+	InstallHook func(*Manifest) error
+
+	LoadHook   func(*Manifest, *Package, string)
+	UnloadHook func(*Manifest, *Package)
 }
 
 func NewFlatBackend(kctx *kcontext.KContext, pkgdir, cachedir string, opts *FlatBackendOptions) (*FlatBackend, error) {
@@ -68,6 +76,7 @@ func NewFlatBackend(kctx *kcontext.KContext, pkgdir, cachedir string, opts *Flat
 		pkgdir:      pkgdir,
 		cachedir:    cachedir,
 		preloadhook: opts.PreLoadHook,
+		installhook: opts.InstallHook,
 		loadhook:    opts.LoadHook,
 		unloadhook:  opts.UnloadHook,
 	}, nil
@@ -265,6 +274,13 @@ func (f *FlatBackend) Load(pkg *Package, rd io.Reader, sig []byte) error {
 
 	if sig != nil {
 		if err := f.installSignature(pkg, sig); err != nil {
+			f.unload(fp.Name(), extracted)
+			return err
+		}
+	}
+
+	if f.installhook != nil {
+		if err := f.installhook(m); err != nil {
 			f.unload(fp.Name(), extracted)
 			return err
 		}
