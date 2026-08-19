@@ -191,6 +191,83 @@ connectors:
 	}
 }
 
+const dockerManifest = `
+name: postgres
+api_version: v1.1.0
+connectors:
+  - type: importer
+    protocols:
+      - postgres
+    image_id: sha256:1111111111111111111111111111111111111111111111111111111111111111
+    image: registry.plakar.io/plugin-postgres:1.0.0
+`
+
+func TestManifestParseImage(t *testing.T) {
+	var m Manifest
+	if err := m.Parse(strings.NewReader(dockerManifest)); err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	c := m.Connectors[0]
+	if !strings.HasPrefix(c.ImageID, "sha256:") {
+		t.Errorf("ImageID = %q", c.ImageID)
+	}
+	if c.Image != "registry.plakar.io/plugin-postgres:1.0.0" {
+		t.Errorf("Image = %q", c.Image)
+	}
+	if err := c.Validate(); err != nil {
+		t.Errorf("Validate: %v", err)
+	}
+}
+
+func TestManifestWindowsExeSuffixSkipsImageConnectors(t *testing.T) {
+	t.Setenv("GOOS", "windows")
+
+	var m Manifest
+	if err := m.Parse(strings.NewReader(dockerManifest)); err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got := m.Connectors[0].Executable; got != "" {
+		t.Errorf("Executable = %q, want empty (no .exe suffix on image connectors)", got)
+	}
+}
+
+func TestManifestConnectorValidate(t *testing.T) {
+	valid := func(c ManifestConnector) error { return c.Validate() }
+
+	if err := valid(ManifestConnector{Executable: "tool"}); err != nil {
+		t.Errorf("native connector: %v", err)
+	}
+	if err := valid(ManifestConnector{ImageID: "sha256:aa"}); err != nil {
+		t.Errorf("image connector: %v", err)
+	}
+	if err := valid(ManifestConnector{ImageID: "sha256:aa", Image: "reg/img:1"}); err != nil {
+		t.Errorf("image connector with registry ref: %v", err)
+	}
+	if err := valid(ManifestConnector{ImageID: "sha256:aa", ExtraFiles: []string{"icon.png"}}); err != nil {
+		t.Errorf("extra_files on an image connector: %v", err)
+	}
+	if err := valid(ManifestConnector{Executable: "tool", LocationFlags: []string{"localfs"}}); err != nil {
+		t.Errorf("localfs native connector: %v", err)
+	}
+
+	if err := valid(ManifestConnector{}); err == nil {
+		t.Error("connector with neither executable nor image_id should fail")
+	}
+	if err := valid(ManifestConnector{Executable: "tool", ImageID: "sha256:aa"}); err == nil {
+		t.Error("connector with both executable and image_id should fail")
+	}
+	if err := valid(ManifestConnector{Executable: "tool", Image: "reg/img:1"}); err == nil {
+		t.Error("image without image_id should fail")
+	}
+	if err := valid(ManifestConnector{ImageID: "sha256:aa", LocationFlags: []string{"localfs"}}); err == nil {
+		t.Error("localfs image connector should fail")
+	}
+	if err := valid(ManifestConnector{Executable: "tool", LocationFlags: []string{"bogus"}}); err == nil {
+		t.Error("unknown location flag should fail")
+	}
+}
+
 func TestManifestConnectorFlags(t *testing.T) {
 	c := ManifestConnector{LocationFlags: []string{"localfs", "file", "stream", "needack", "nomerge"}}
 	flags, err := c.Flags()

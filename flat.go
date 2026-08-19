@@ -214,13 +214,15 @@ func (f *FlatBackend) loadmanifest(mpath string) (*Manifest, error) {
 
 	dir := filepath.Dir(mpath)
 	for _, conn := range m.Connectors {
-		exe := filepath.Join(dir, conn.Executable)
-		if !strings.HasPrefix(exe, dir) {
-			return nil, fmt.Errorf("bad executable path %q", conn.Executable)
+		if err := conn.Validate(); err != nil {
+			return nil, err
 		}
 
-		if _, err := conn.Flags(); err != nil {
-			return nil, err
+		if conn.Executable != "" {
+			exe := filepath.Join(dir, conn.Executable)
+			if !strings.HasPrefix(exe, dir) {
+				return nil, fmt.Errorf("bad executable path %q", conn.Executable)
+			}
 		}
 	}
 

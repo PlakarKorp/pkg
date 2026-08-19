@@ -117,7 +117,7 @@ func (m *Manifest) Parse(rd io.Reader) error {
 	// Windows really wants executables to end with .exe
 	if os.Getenv("GOOS") == "windows" || runtime.GOOS == "windows" {
 		for i := range m.Connectors {
-			if !strings.HasSuffix(m.Connectors[i].Executable, ".exe") {
+			if m.Connectors[i].Executable != "" && !strings.HasSuffix(m.Connectors[i].Executable, ".exe") {
 				m.Connectors[i].Executable += ".exe"
 			}
 		}
