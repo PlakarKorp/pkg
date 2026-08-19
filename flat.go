@@ -349,12 +349,12 @@ func (f *FlatBackend) unload(pkgfile, extracted string) error {
 	// Removed too, so a later install of the same version cannot inherit
 	// the previous one's signature.
 	if rmerr := os.Remove(pkgfile + sigSuffix); rmerr != nil && !os.IsNotExist(rmerr) {
-		return rmerr
+		err = errors.Join(err, rmerr)
 	}
 
 	if extracted != "" {
-		if err := os.RemoveAll(extracted); err != nil {
-			return err
+		if rmerr := os.RemoveAll(extracted); rmerr != nil {
+			err = errors.Join(err, rmerr)
 		}
 	}
 	return err
