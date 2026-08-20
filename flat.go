@@ -237,23 +237,29 @@ func (f *FlatBackend) Load(pkg *Package, rd io.Reader, sig []byte) error {
 		}
 	}
 
-	// Rename rather than hard-link the temp file into place: the temp
-	// file already lives in f.pkgdir, so this is atomic, and os.Rename is
-	// far more portable than os.Link, which fails on Windows on
-	// filesystems or setups that don't support hard links.
-	pkgdir := filepath.Join(f.pkgdir, pkg.Filename())
-	if err := os.Rename(fp.Name(), pkgdir); err != nil {
-		f.unload(fp.Name(), extracted)
-		return err
-	}
-
 	// Retained so an installed package can be re-checked later, and so
 	// its provenance can be reported without the network.
 	if sig != nil {
 		if err := os.WriteFile(f.sigpath(pkg), sig, 0644); err != nil {
-			f.unload(pkgdir, extracted)
+			f.unload(fp.Name(), extracted)
 			return err
 		}
+	}
+
+	// Rename rather than hard-link the temp file into place: the temp
+	// file already lives in f.pkgdir, so this is atomic, and os.Rename is
+	// far more portable than os.Link, which fails on Windows on
+	// filesystems or setups that don't support hard links.
+	//
+	// We might leak the signature on disk if this fails, but
+	// since multiple instance of the pkg manager could be racing
+	// against each other's to install the same package, leaking a
+	// (small) signature file in a unlikely case it's safer than
+	// removing it.
+	pkgdir := filepath.Join(f.pkgdir, pkg.Filename())
+	if err := os.Rename(fp.Name(), pkgdir); err != nil {
+		f.unload(fp.Name(), extracted)
+		return err
 	}
 
 	if f.loadhook != nil {
