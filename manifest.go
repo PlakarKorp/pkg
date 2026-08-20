@@ -101,6 +101,10 @@ func (m *Manifest) Parse(rd io.Reader) error {
 		if !ct.IsValid() {
 			return fmt.Errorf("connector #%d: type %s is invalid", i, ct)
 		}
+
+		if m.Connectors[i].Executable == "" {
+			return fmt.Errorf("connector #%d: executable not set", i)
+		}
 	}
 
 	// Windows really wants executables to end with .exe

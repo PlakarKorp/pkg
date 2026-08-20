@@ -139,6 +139,7 @@ func TestManifestValidation(t *testing.T) {
 		rd := strings.NewReader(fmt.Sprintf(`name: foo
 connectors:
   - type: importer
+    executable: true
     class: %s
     subclass: %s`, test.class, test.subclass))
 

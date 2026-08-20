@@ -274,9 +274,10 @@ func TestFlatBackendUnloadHook(t *testing.T) {
 	manifest, err := yaml.Marshal(&Manifest{
 		Name: "s3",
 		Connectors: []ManifestConnector{{
-			Type:     ConnectorTypeImporter,
-			Class:    ResourceClassObjectStorage,
-			SubClass: ResourceSubClassS3,
+			Type:       ConnectorTypeImporter,
+			Executable: "true",
+			Class:      ResourceClassObjectStorage,
+			SubClass:   ResourceSubClassS3,
 		}},
 	})
 	if err != nil {
