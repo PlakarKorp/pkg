@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/PlakarKorp/kloset/kcontext"
+	"go.yaml.in/yaml/v3"
 )
 
 func newTestFlatBackend(t *testing.T, opts *FlatBackendOptions) (*FlatBackend, string, string) {
@@ -269,7 +270,20 @@ func TestFlatBackendUnloadHook(t *testing.T) {
 	if err := os.MkdirAll(extracted, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(extracted, "manifest.yaml"), []byte("name: s3\n"), 0644); err != nil {
+
+	manifest, err := yaml.Marshal(&Manifest{
+		Name: "s3",
+		Connectors: []ManifestConnector{{
+			Type:     ConnectorTypeImporter,
+			Class:    ResourceClassObjectStorage,
+			SubClass: ResourceSubClassS3,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(extracted, "manifest.yaml"), manifest, 0644); err != nil {
 		t.Fatal(err)
 	}
 

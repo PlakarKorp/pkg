@@ -1,6 +1,7 @@
 package pkg
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -107,6 +108,57 @@ func TestNewManifestFromFile(t *testing.T) {
 func TestNewManifestFromFileMissing(t *testing.T) {
 	if _, err := NewManifestFromFile(filepath.Join(t.TempDir(), "nope.yaml")); err == nil {
 		t.Fatal("expected error for missing file")
+	}
+}
+
+func TestManifestNoConnectors(t *testing.T) {
+	rd := strings.NewReader(`name: s3`)
+	var m Manifest
+
+	if err := m.Parse(rd); err == nil {
+		t.Errorf("expected to fail when parsing a manifest without a connector")
+	}
+}
+
+func TestManifestValidation(t *testing.T) {
+	// try first with a good connector type and different
+	// combination of classes and subclasses
+	suite := []struct {
+		class    ResourceClass
+		subclass ResourceSubClass
+		ok       bool
+	}{
+		{ResourceClassUndefined, ResourceSubClassUndefined, true},
+		{ResourceClassObjectStorage, ResourceSubClassS3, true},
+		{ResourceClassObjectStorage, ResourceSubClassUndefined, true},
+		{ResourceClassObjectStorage, ResourceSubClassPostgreSQL, false},
+		{ResourceClassObjectStorage, ResourceSubClass("foobar"), false},
+	}
+
+	for _, test := range suite {
+		rd := strings.NewReader(fmt.Sprintf(`name: foo
+connectors:
+  - type: importer
+    class: %s
+    subclass: %s`, test.class, test.subclass))
+
+		var m Manifest
+		err := m.Parse(rd)
+		if test.ok && err != nil {
+			t.Errorf("%s/%s: unexpected failure: %v",
+				test.class, test.subclass, err)
+		} else if !test.ok && err == nil {
+			t.Errorf("%s/%s: expected failure", test.class, test.subclass)
+		}
+	}
+
+	// now with a bad connector type
+	var m Manifest
+	err := m.Parse(strings.NewReader(`name: foo
+connectors:
+  - type: myamazingconnector`))
+	if err == nil {
+		t.Errorf("expected failure with bad connector name")
 	}
 }
 

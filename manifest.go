@@ -78,6 +78,31 @@ func (m *Manifest) Parse(rd io.Reader) error {
 		return fmt.Errorf("failed to decode the manifest: %w", err)
 	}
 
+	if len(m.Connectors) == 0 {
+		return fmt.Errorf("no connectors defined?")
+	}
+
+	for i := range m.Connectors {
+		var (
+			class    = ResourceClass(m.Connectors[i].Class)
+			subclass = ResourceSubClass(m.Connectors[i].SubClass)
+			ct       = ConnectorType(m.Connectors[i].Type)
+		)
+
+		if !class.IsValid() || !subclass.IsValid() {
+			return fmt.Errorf("class or subclass invalid for connector #%d", i)
+		}
+
+		if subclass != ResourceSubClassUndefined && !subclass.IsSubClassOf(class) {
+			return fmt.Errorf("connector #%d: subclass %s is not under class %s",
+				i, subclass, class)
+		}
+
+		if !ct.IsValid() {
+			return fmt.Errorf("connector #%d: type %s is invalid", i, ct)
+		}
+	}
+
 	// Windows really wants executables to end with .exe
 	if os.Getenv("GOOS") == "windows" || runtime.GOOS == "windows" {
 		for i := range m.Connectors {
