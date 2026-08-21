@@ -117,6 +117,30 @@ func (f *FlatBackend) List(name string) iter.Seq2[*Package, error] {
 	}
 }
 
+func (f *FlatBackend) installSignature(pkg *Package, sig []byte) error {
+	tmp, err := os.CreateTemp(f.pkgdir, "signature*")
+	if err != nil {
+		return err
+	}
+	if _, err := tmp.Write(sig); err != nil {
+		tmp.Close()
+		os.Remove(tmp.Name())
+		return err
+	}
+
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmp.Name())
+		return err
+	}
+
+	if err := os.Rename(tmp.Name(), f.sigpath(pkg)); err != nil {
+		os.Remove(tmp.Name())
+		return err
+	}
+
+	return nil
+}
+
 func (f *FlatBackend) extract(destDir, ptar string) error {
 	store, serializedConfig, err := storage.Open(f.kcontext, map[string]string{
 		"location": "ptar://" + ptar,
@@ -237,23 +261,27 @@ func (f *FlatBackend) Load(pkg *Package, rd io.Reader, sig []byte) error {
 		}
 	}
 
+	if sig != nil {
+		if err := f.installSignature(pkg, sig); err != nil {
+			f.unload(fp.Name(), extracted)
+			return err
+		}
+	}
+
 	// Rename rather than hard-link the temp file into place: the temp
 	// file already lives in f.pkgdir, so this is atomic, and os.Rename is
 	// far more portable than os.Link, which fails on Windows on
 	// filesystems or setups that don't support hard links.
+	//
+	// We might leak the signature on disk if this fails, but
+	// since multiple instance of the pkg manager could be racing
+	// against each other's to install the same package, leaking a
+	// (small) signature file in a unlikely case it's safer than
+	// removing it.
 	pkgdir := filepath.Join(f.pkgdir, pkg.Filename())
 	if err := os.Rename(fp.Name(), pkgdir); err != nil {
 		f.unload(fp.Name(), extracted)
 		return err
-	}
-
-	// Retained so an installed package can be re-checked later, and so
-	// its provenance can be reported without the network.
-	if sig != nil {
-		if err := os.WriteFile(f.sigpath(pkg), sig, 0644); err != nil {
-			f.unload(pkgdir, extracted)
-			return err
-		}
 	}
 
 	if f.loadhook != nil {
@@ -321,12 +349,12 @@ func (f *FlatBackend) unload(pkgfile, extracted string) error {
 	// Removed too, so a later install of the same version cannot inherit
 	// the previous one's signature.
 	if rmerr := os.Remove(pkgfile + sigSuffix); rmerr != nil && !os.IsNotExist(rmerr) {
-		return rmerr
+		err = errors.Join(err, rmerr)
 	}
 
 	if extracted != "" {
-		if err := os.RemoveAll(extracted); err != nil {
-			return err
+		if rmerr := os.RemoveAll(extracted); rmerr != nil {
+			err = errors.Join(err, rmerr)
 		}
 	}
 	return err
