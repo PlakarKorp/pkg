@@ -30,6 +30,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -47,11 +48,15 @@ var (
 	ErrAlreadyInstalled      = errors.New("already installed")
 	ErrBadOSArch             = errors.New("OS or architecture don't match the current one")
 	ErrAuthorizationRequired = errors.New("authorization required")
+	ErrBadEdition            = errors.New("bad edition")
+
+	editionre = regexp.MustCompile(`^[-_a-zA-Z0-9]+$`)
 )
 
 type Manager struct {
 	store           Backend
 	repository      *url.URL
+	edition         string
 	api             *url.URL
 	reqhook         RequestHook
 	binaryNeedsAuth bool
@@ -60,14 +65,14 @@ type Manager struct {
 }
 
 type Options struct {
-	InstallURL      string
+	DistURL         string
+	Edition         string // community, devel, enterprise, ...
 	ApiURL          string
 	BinaryNeedsAuth bool
 	RequestHook     RequestHook
 
 	// User agent name for network requests on the repository at
-	// InstallURL.  "(os/architecture)" will be appended
-	// implicitly.
+	// DistURL.  "(os/architecture)" will be appended implicitly.
 	UserAgent string
 
 	// Verifier decides whether an artifact may be installed. When nil,
@@ -100,18 +105,26 @@ func New(store Backend, opts *Options) (*Manager, error) {
 
 	m := &Manager{
 		store:           store,
+		edition:         "community",
 		useragent:       opts.UserAgent,
 		binaryNeedsAuth: opts.BinaryNeedsAuth,
 		reqhook:         opts.RequestHook,
 		verifier:        opts.Verifier,
 	}
 
-	if opts.InstallURL != "" {
-		u, err := url.Parse(opts.InstallURL)
+	if opts.DistURL != "" {
+		u, err := url.Parse(opts.DistURL)
 		if err != nil {
 			return nil, err
 		}
 		m.repository = u
+	}
+
+	if opts.Edition != "" {
+		if !editionre.MatchString(opts.Edition) {
+			return nil, fmt.Errorf("%w: %q", ErrBadEdition, opts.Edition)
+		}
+		m.edition = opts.Edition
 	}
 
 	if opts.ApiURL != "" {
@@ -141,6 +154,10 @@ func (p *Manager) Signature(pkg *Package) ([]byte, error) {
 }
 
 type AddOptions struct {
+	// The edition to consider, if given.  Falls back to
+	// [Options.Edition].
+	Edition string
+
 	// The version to install, if given.  Otherwise, the latest
 	// version available will be used.
 	Version string
@@ -241,7 +258,7 @@ func (p *Manager) Add(target string, opts *AddOptions) error {
 		if opts.Version != "" {
 			name, version = base, opts.Version
 		} else {
-			r, err := p.FetchRecipe(base)
+			r, err := p.FetchRecipe(base, &FetchOptions{Edition: opts.Edition})
 			if err != nil {
 				return err
 			}
@@ -252,7 +269,7 @@ func (p *Manager) Add(target string, opts *AddOptions) error {
 			return err
 		}
 
-		return p.fetchbinary(name, version, opts.Container)
+		return p.fetchbinary(name, version, opts.Edition, opts.Container)
 	}
 
 	var pkg Package
@@ -296,6 +313,19 @@ func (p *Manager) Add(target string, opts *AddOptions) error {
 	return p.store.Load(&pkg, rd, sig)
 }
 
+func (p *Manager) repoFor(edition string) (*url.URL, error) {
+	u := *p.repository
+	if edition == "" {
+		edition = p.edition
+	}
+	if !editionre.MatchString(edition) {
+		return nil, fmt.Errorf("%w: %q", ErrBadEdition, edition)
+	}
+
+	u.Path = path.Join(u.Path, edition)
+	return &u, nil
+}
+
 func (p *Manager) fetch(url *url.URL, endpoint string, reqauth bool) (*http.Response, error) {
 	u := *url
 	u.Path = path.Join(u.Path, endpoint)
@@ -328,24 +358,39 @@ func (p *Manager) fetch(url *url.URL, endpoint string, reqauth bool) (*http.Resp
 	return resp, nil
 }
 
-func (p *Manager) FetchRecipe(name string) (*Recipe, error) {
+type FetchOptions struct {
+	// The edition to consider, if given.  Falls back to
+	// [Options.Edition].
+	Edition string
+}
+
+func (p *Manager) FetchRecipe(name string, opts *FetchOptions) (*Recipe, error) {
+	if opts == nil {
+		opts = &FetchOptions{}
+	}
+
 	const filename = "recipe.yaml"
+
+	repo, err := p.repoFor(opts.Edition)
+	if err != nil {
+		return nil, err
+	}
 
 	// A recipe resolves which version gets installed, so it must be
 	// verified before it is parsed.
-	sig, err := p.fetchsig(path.Join(PLUGIN_API_VERSION, name, filename))
+	sig, err := p.fetchsig(repo, path.Join(PLUGIN_API_VERSION, name, filename))
 	if err != nil {
 		return nil, err
 	}
 
 	s := path.Join(PLUGIN_API_VERSION, name, filename)
-	resp, err := p.fetch(p.repository, s, false)
+	resp, err := p.fetch(repo, s, false)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	rd, err := p.verify(filename, nil, p.repository.String(), sig, resp.Body)
+	rd, err := p.verify(filename, nil, repo.String(), sig, resp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -361,12 +406,12 @@ func (p *Manager) FetchRecipe(name string) (*Recipe, error) {
 // fetchsig retrieves the .sum.sig accompanying the file at endpoint. A missing
 // signature yields a nil slice, leaving it to the Verifier to decide what an
 // unsigned file means.
-func (p *Manager) fetchsig(endpoint string) ([]byte, error) {
+func (p *Manager) fetchsig(url *url.URL, endpoint string) ([]byte, error) {
 	if p.verifier == nil {
 		return nil, nil
 	}
 
-	resp, err := p.fetch(p.repository, endpoint+sigSuffix, false)
+	resp, err := p.fetch(url, endpoint+sigSuffix, false)
 	if err != nil {
 		return nil, nil
 	}
@@ -403,7 +448,7 @@ func (p *Manager) verify(filename string, pkg *Package, origin string, sig []byt
 	return bytes.NewReader(content), nil
 }
 
-func (p *Manager) fetchbinary(name, version string, container bool) error {
+func (p *Manager) fetchbinary(name, version, edition string, container bool) error {
 	goos := runtime.GOOS
 	if container {
 		goos = OSContainer
@@ -416,22 +461,27 @@ func (p *Manager) fetchbinary(name, version string, container bool) error {
 		OperatingSystem: goos,
 	}
 
-	s := path.Join(PLUGIN_API_VERSION, name, pkg.Filename())
-
-	// Fetched first, so a missing signature fails before pulling down tens
-	// of megabytes.
-	sig, err := p.fetchsig(s)
+	repo, err := p.repoFor(edition)
 	if err != nil {
 		return err
 	}
 
-	resp, err := p.fetch(p.repository, s, p.binaryNeedsAuth)
+	s := path.Join(PLUGIN_API_VERSION, name, pkg.Filename())
+
+	// Fetched first, so a missing signature fails before pulling down tens
+	// of megabytes.
+	sig, err := p.fetchsig(repo, s)
+	if err != nil {
+		return err
+	}
+
+	resp, err := p.fetch(repo, s, p.binaryNeedsAuth)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	rd, err := p.verify(pkg.Filename(), &pkg, p.repository.String(), sig, resp.Body)
+	rd, err := p.verify(pkg.Filename(), &pkg, repo.String(), sig, resp.Body)
 	if err != nil {
 		return err
 	}
@@ -496,7 +546,10 @@ func (p *Manager) Query(opts *QueryOptions) (ret []*Integration, err error) {
 
 	edition := opts.Edition
 	if edition == "" {
-		edition = "community"
+		edition = p.edition
+	}
+	if !editionre.MatchString(edition) {
+		return nil, fmt.Errorf("%w: %q", ErrBadEdition, edition)
 	}
 
 	packages := make(map[string]*Integration)

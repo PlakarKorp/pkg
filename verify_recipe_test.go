@@ -17,7 +17,7 @@ func recipeRegistry(t *testing.T, files map[string]string) *httptest.Server {
 	mux := http.NewServeMux()
 
 	for name, body := range files {
-		mux.HandleFunc("/"+PLUGIN_API_VERSION+"/s3/"+name,
+		mux.HandleFunc("/community/"+PLUGIN_API_VERSION+"/s3/"+name,
 			func(body string) http.HandlerFunc {
 				return func(w http.ResponseWriter, r *http.Request) {
 					fmt.Fprint(w, body)
@@ -45,7 +45,7 @@ func TestRecipeIsVerifiedBeforeParse(t *testing.T) {
 	var seen *Artifact
 
 	m, err := New(newFakeBackend(), &Options{
-		InstallURL: srv.URL,
+		DistURL: srv.URL,
 		Verifier: VerifierFunc(func(a *Artifact, rd io.Reader) error {
 			seen = a
 			io.Copy(io.Discard, rd)
@@ -56,7 +56,7 @@ func TestRecipeIsVerifiedBeforeParse(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, err := m.FetchRecipe("s3")
+	r, err := m.FetchRecipe("s3", nil)
 	if err != nil {
 		t.Fatalf("FetchRecipe: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestRejectedRecipeYieldsNoVersion(t *testing.T) {
 	})
 
 	m, err := New(newFakeBackend(), &Options{
-		InstallURL: srv.URL,
+		DistURL: srv.URL,
 		Verifier: VerifierFunc(func(a *Artifact, rd io.Reader) error {
 			return fmt.Errorf("nope: %w", ErrUnverified)
 		}),
@@ -96,7 +96,7 @@ func TestRejectedRecipeYieldsNoVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := m.FetchRecipe("s3"); !errors.Is(err, ErrUnverified) {
+	if _, err := m.FetchRecipe("s3", nil); !errors.Is(err, ErrUnverified) {
 		t.Errorf("FetchRecipe error = %v, want ErrUnverified", err)
 	}
 }
@@ -111,7 +111,7 @@ func TestUnsignedRecipeReachesVerifier(t *testing.T) {
 	var seen *Artifact
 
 	m, err := New(newFakeBackend(), &Options{
-		InstallURL: srv.URL,
+		DistURL: srv.URL,
 		Verifier: VerifierFunc(func(a *Artifact, rd io.Reader) error {
 			seen = a
 			io.Copy(io.Discard, rd)
@@ -122,7 +122,7 @@ func TestUnsignedRecipeReachesVerifier(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := m.FetchRecipe("s3"); err != nil {
+	if _, err := m.FetchRecipe("s3", nil); err != nil {
 		t.Fatalf("FetchRecipe: %v", err)
 	}
 
@@ -143,7 +143,7 @@ func TestNoVerifierSkipsSignatureFetch(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		requested = append(requested, r.URL.Path)
-		if r.URL.Path == "/"+PLUGIN_API_VERSION+"/s3/recipe.yaml" {
+		if r.URL.Path == "/community/"+PLUGIN_API_VERSION+"/s3/recipe.yaml" {
 			fmt.Fprint(w, testRecipe)
 			return
 		}
@@ -153,12 +153,12 @@ func TestNoVerifierSkipsSignatureFetch(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	m, err := New(newFakeBackend(), &Options{InstallURL: srv.URL})
+	m, err := New(newFakeBackend(), &Options{DistURL: srv.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := m.FetchRecipe("s3"); err != nil {
+	if _, err := m.FetchRecipe("s3", nil); err != nil {
 		t.Fatalf("FetchRecipe: %v", err)
 	}
 

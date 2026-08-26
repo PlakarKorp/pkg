@@ -35,7 +35,8 @@ if err != nil {
 }
 
 manager, err := pkg.New(backend, &pkg.Options{
-	InstallURL:      "https://plakar.io/dist/plugins/kloset/community/",
+	DistURL:         "https://plakar.io/dist/plugins/kloset/",
+	Edition:         "community",
 	ApiURL:          "https://api.plakar.io/",
 	BinaryNeedsAuth: true,
 	UserAgent:       "myclient/v1.2.3",
