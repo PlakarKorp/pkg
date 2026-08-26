@@ -133,8 +133,8 @@ func TestNewManagerCustomUserAgent(t *testing.T) {
 }
 
 func TestNewManagerInvalidURLs(t *testing.T) {
-	if _, err := New(newFakeBackend(), &Options{InstallURL: "://bad"}); err == nil {
-		t.Error("expected error for bad InstallURL")
+	if _, err := New(newFakeBackend(), &Options{DistURL: "://bad"}); err == nil {
+		t.Error("expected error for bad DistURL")
 	}
 	if _, err := New(newFakeBackend(), &Options{ApiURL: "://bad"}); err == nil {
 		t.Error("expected error for bad ApiURL")
@@ -358,7 +358,7 @@ func TestDelAll(t *testing.T) {
 
 func TestFetchRecipe(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		wantPath := "/" + PLUGIN_API_VERSION + "/s3/recipe.yaml"
+		wantPath := "/community/" + PLUGIN_API_VERSION + "/s3/recipe.yaml"
 		if r.URL.Path != wantPath {
 			t.Errorf("request path = %q, want %q", r.URL.Path, wantPath)
 		}
@@ -369,8 +369,8 @@ func TestFetchRecipe(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	m, _ := New(newFakeBackend(), &Options{InstallURL: srv.URL})
-	r, err := m.FetchRecipe("s3")
+	m, _ := New(newFakeBackend(), &Options{DistURL: srv.URL})
+	r, err := m.FetchRecipe("s3", nil)
 	if err != nil {
 		t.Fatalf("FetchRecipe: %v", err)
 	}
@@ -385,8 +385,8 @@ func TestFetchRecipeHTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	m, _ := New(newFakeBackend(), &Options{InstallURL: srv.URL})
-	if _, err := m.FetchRecipe("s3"); err == nil {
+	m, _ := New(newFakeBackend(), &Options{DistURL: srv.URL})
+	if _, err := m.FetchRecipe("s3", nil); err == nil {
 		t.Fatal("expected error for 404 recipe")
 	}
 }
@@ -412,7 +412,7 @@ func TestFetchBinaryThroughAdd(t *testing.T) {
 	defer srv.Close()
 
 	be := newFakeBackend()
-	m, _ := New(be, &Options{InstallURL: srv.URL})
+	m, _ := New(be, &Options{DistURL: srv.URL})
 
 	// ImplicitFetch with a bare name (no .ptar) drives the recipe ->
 	// binary fetch path.
@@ -444,7 +444,7 @@ func TestFetchBinaryWithExplicitVersionSkipsRecipe(t *testing.T) {
 	defer srv.Close()
 
 	be := newFakeBackend()
-	m, _ := New(be, &Options{InstallURL: srv.URL})
+	m, _ := New(be, &Options{DistURL: srv.URL})
 
 	if err := m.Add("s3", &AddOptions{ImplicitFetch: true, Version: "v3.0.0"}); err != nil {
 		t.Fatalf("Add: %v", err)
@@ -467,7 +467,7 @@ func TestFetchRequiresAuthWhenConfigured(t *testing.T) {
 	// BinaryNeedsAuth, but no RequestHook supplies a token -> the
 	// Authorization header stays empty and the fetch is refused before
 	// any request is made.
-	m, _ := New(be, &Options{InstallURL: srv.URL, BinaryNeedsAuth: true})
+	m, _ := New(be, &Options{DistURL: srv.URL, BinaryNeedsAuth: true})
 	err := m.Add("s3", &AddOptions{ImplicitFetch: true, Version: "v1.0.0"})
 	if !errors.Is(err, ErrAuthorizationRequired) {
 		t.Errorf("Add err = %v, want ErrAuthorizationRequired", err)
@@ -484,7 +484,7 @@ func TestWithBearer(t *testing.T) {
 
 	be := newFakeBackend()
 	m, _ := New(be, &Options{
-		InstallURL:      srv.URL,
+		DistURL:         srv.URL,
 		BinaryNeedsAuth: true,
 		RequestHook:     WithBearer(func() (string, error) { return "secrettoken", nil }),
 	})
