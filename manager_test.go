@@ -379,6 +379,17 @@ func TestFetchRecipe(t *testing.T) {
 	}
 }
 
+func TestFetchRecipeWithoutDistURL(t *testing.T) {
+	m, _ := New(newFakeBackend(), nil)
+	_, err := m.FetchRecipe("s3", nil)
+	if err == nil {
+		t.Fatal("expected error for Fetch without a DistURL")
+	}
+	if !errors.Is(err, ErrNoDistURL) {
+		t.Fatalf("expected ErrNoDistURL, got %v (%T)", err, err)
+	}
+}
+
 func TestFetchRecipeHTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "nope", http.StatusNotFound)
