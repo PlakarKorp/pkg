@@ -442,6 +442,55 @@ func TestFetchBinaryThroughAdd(t *testing.T) {
 	}
 }
 
+func TestAddFromNonDefaultEdition(t *testing.T) {
+	wantFile := (&Package{
+		Name:            "s3",
+		Version:         "v1.2.3",
+		OperatingSystem: runtime.GOOS,
+		Architecture:    runtime.GOARCH,
+	}).Filename()
+
+	const root = "/dist/"
+	dir := root + "devel/" + PLUGIN_API_VERSION + "/s3/"
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case dir + "recipe.yaml":
+			io.WriteString(w, "name: s3\nversion: v1.2.3\n")
+		case dir + wantFile:
+			io.WriteString(w, "PTARDATA")
+		default:
+			http.Error(w, "unexpected "+r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	origins := map[string]string{}
+	be := newFakeBackend()
+	m, _ := New(be, &Options{
+		DistURL: srv.URL + root,
+		Verifier: VerifierFunc(func(a *Artifact, rd io.Reader) error {
+			origins[a.Filename] = a.Origin
+			io.Copy(io.Discard, rd)
+			return nil
+		}),
+	})
+
+	if err := m.Add("s3", &AddOptions{ImplicitFetch: true, Edition: "devel"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	wantOrigin := srv.URL + root + "devel"
+	for _, name := range []string{"recipe.yaml", wantFile} {
+		if got := origins[name]; got != wantOrigin {
+			t.Errorf("%s origin = %q, want %q", name, got, wantOrigin)
+		}
+	}
+	if string(be.loadData[wantFile]) != "PTARDATA" {
+		t.Errorf("loaded data = %q, want PTARDATA", be.loadData[wantFile])
+	}
+}
+
 func TestFetchBinaryWithExplicitVersionSkipsRecipe(t *testing.T) {
 	var recipeHit bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
