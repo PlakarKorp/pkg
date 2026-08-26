@@ -49,6 +49,7 @@ var (
 	ErrBadOSArch             = errors.New("OS or architecture don't match the current one")
 	ErrAuthorizationRequired = errors.New("authorization required")
 	ErrNoDistURL             = errors.New("no DistURL provided")
+	ErrNoApiURL              = errors.New("no ApiURL provided")
 	ErrBadEdition            = errors.New("bad edition")
 
 	editionre = regexp.MustCompile(`^[-_a-zA-Z0-9]+$`)
@@ -580,6 +581,10 @@ func (p *Manager) Query(opts *QueryOptions) (ret []*Integration, err error) {
 	}
 
 	if !opts.OnlyLocal {
+		if p.api == nil {
+			return nil, ErrNoApiURL
+		}
+
 		endp := "v1/integrations/integrations-" + PLUGIN_BUNDLE_VERSION + ".json"
 		res, err := p.fetch(p.api, endp, false)
 		if err != nil {
