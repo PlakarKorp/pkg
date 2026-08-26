@@ -549,6 +549,18 @@ func TestQueryOnlyLocal(t *testing.T) {
 	}
 }
 
+func TestQueryWithoutApiURL(t *testing.T) {
+	m, _ := New(newFakeBackend(), nil)
+
+	_, err := m.Query(nil)
+	if err == nil {
+		t.Fatalf("expected Query without ApiURL to fail")
+	}
+	if !errors.Is(err, ErrNoApiURL) {
+		t.Fatalf("expected err to be ErrNoApiURL, got %v (%T)", err, err)
+	}
+}
+
 func TestQueryMergesRemoteIndex(t *testing.T) {
 	const index = `{
 		"version": "v1.0.0",
