@@ -48,6 +48,7 @@ var (
 	ErrAlreadyInstalled      = errors.New("already installed")
 	ErrBadOSArch             = errors.New("OS or architecture don't match the current one")
 	ErrAuthorizationRequired = errors.New("authorization required")
+	ErrNoDistURL             = errors.New("no DistURL provided")
 	ErrBadEdition            = errors.New("bad edition")
 
 	editionre = regexp.MustCompile(`^[-_a-zA-Z0-9]+$`)
@@ -314,6 +315,10 @@ func (p *Manager) Add(target string, opts *AddOptions) error {
 }
 
 func (p *Manager) repoFor(edition string) (*url.URL, error) {
+	if p.repository == nil {
+		return nil, ErrNoDistURL
+	}
+
 	u := *p.repository
 	if edition == "" {
 		edition = p.edition
