@@ -41,6 +41,7 @@ const (
 	ResourceSubClassS3            ResourceSubClass = "s3"
 	ResourceSubClassSecretManager ResourceSubClass = "secret-manager"
 	ResourceSubClassSFTP          ResourceSubClass = "sftp"
+	ResourceSubClassVMware        ResourceSubClass = "vmware"
 
 	ConnectorTypeImporter       ConnectorType = "importer"
 	ConnectorTypeExporter       ConnectorType = "exporter"
@@ -84,6 +85,7 @@ var resourceSubClasses []ResourceSubClass = []ResourceSubClass{
 	ResourceSubClassS3,
 	ResourceSubClassSFTP,
 	ResourceSubClassSecretManager,
+	ResourceSubClassVMware,
 }
 
 var connectorTypes []ConnectorType = []ConnectorType{
@@ -100,7 +102,7 @@ var resourceClassTree map[ResourceClass][]ResourceSubClass = map[ResourceClass][
 	ResourceClassCompute:       {},
 	ResourceClassDatabase:      {ResourceSubClassPostgreSQL, ResourceSubClassMySQL, ResourceSubClassMongoDB, ResourceSubClassRedis},
 	ResourceClassFileStorage:   {},
-	ResourceClassHypervisor:    {ResourceSubClassProxmox},
+	ResourceClassHypervisor:    {ResourceSubClassProxmox, ResourceSubClassVMware},
 	ResourceClassIdentity:      {},
 	ResourceClassMessaging:     {},
 	ResourceClassNetwork:       {},
