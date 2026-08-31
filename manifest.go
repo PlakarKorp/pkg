@@ -90,27 +90,8 @@ func (m *Manifest) Parse(rd io.Reader) error {
 	}
 
 	for i := range m.Connectors {
-		var (
-			class    = ResourceClass(m.Connectors[i].Class)
-			subclass = ResourceSubClass(m.Connectors[i].SubClass)
-			ct       = ConnectorType(m.Connectors[i].Type)
-		)
-
-		if !class.IsValid() || !subclass.IsValid() {
-			return fmt.Errorf("class or subclass invalid for connector #%d", i)
-		}
-
-		if subclass != ResourceSubClassUndefined && !subclass.IsSubClassOf(class) {
-			return fmt.Errorf("connector #%d: subclass %s is not under class %s",
-				i, subclass, class)
-		}
-
-		if !ct.IsValid() {
-			return fmt.Errorf("connector #%d: type %s is invalid", i, ct)
-		}
-
-		if m.Connectors[i].Executable == "" {
-			return fmt.Errorf("connector #%d: executable not set", i)
+		if err := m.Connectors[i].Validate(); err != nil {
+			return fmt.Errorf("connector #%b: %w", i, err)
 		}
 	}
 
@@ -143,19 +124,40 @@ func (conn *ManifestConnector) Validate() error {
 		return err
 	}
 
+	var (
+		class    = ResourceClass(conn.Class)
+		subclass = ResourceSubClass(conn.SubClass)
+		ct       = ConnectorType(conn.Type)
+	)
+
+	if !class.IsValid() || !subclass.IsValid() {
+		return fmt.Errorf("bad class or subclass")
+	}
+
+	if subclass != ResourceSubClassUndefined && !subclass.IsSubClassOf(class) {
+		return fmt.Errorf("subclass %s is not under class %s", subclass, class)
+	}
+
+	if !ct.IsValid() {
+		return fmt.Errorf("type %s is invalid", ct)
+	}
+
 	if (conn.Executable == "") == (conn.ImageID == "") {
 		return fmt.Errorf("connector must set exactly one of executable and image_id")
 	}
 
-	if conn.ImageID == "" {
+	if conn.Executable != "" {
 		if conn.Image != "" {
-			return fmt.Errorf("image requires image_id")
+			return fmt.Errorf("cannot use image with executable")
 		}
-		return nil
-	}
 
-	if flags&location.FLAG_LOCALFS != 0 {
-		return fmt.Errorf("localfs connectors cannot run as containers")
+		if conn.Executable == "" {
+			return fmt.Errorf("executable not set")
+		}
+	} else {
+		if flags&location.FLAG_LOCALFS != 0 {
+			return fmt.Errorf("localfs connectors cannot run as containers")
+		}
 	}
 
 	return nil
