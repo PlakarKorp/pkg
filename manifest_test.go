@@ -235,36 +235,40 @@ func TestManifestWindowsExeSuffixSkipsImageConnectors(t *testing.T) {
 func TestManifestConnectorValidate(t *testing.T) {
 	valid := func(c ManifestConnector) error { return c.Validate() }
 
-	if err := valid(ManifestConnector{Executable: "tool"}); err != nil {
+	if err := valid(ManifestConnector{Type: "importer", Executable: "tool"}); err != nil {
 		t.Errorf("native connector: %v", err)
 	}
-	if err := valid(ManifestConnector{ImageID: "sha256:aa"}); err != nil {
+	if err := valid(ManifestConnector{Type: "importer", ImageID: "sha256:aa"}); err != nil {
 		t.Errorf("image connector: %v", err)
 	}
-	if err := valid(ManifestConnector{ImageID: "sha256:aa", Image: "reg/img:1"}); err != nil {
+	if err := valid(ManifestConnector{Type: "importer", ImageID: "sha256:aa", Image: "reg/img:1"}); err != nil {
 		t.Errorf("image connector with registry ref: %v", err)
 	}
-	if err := valid(ManifestConnector{ImageID: "sha256:aa", ExtraFiles: []string{"icon.png"}}); err != nil {
+	if err := valid(ManifestConnector{Type: "importer", ImageID: "sha256:aa", ExtraFiles: []string{"icon.png"}}); err != nil {
 		t.Errorf("extra_files on an image connector: %v", err)
 	}
-	if err := valid(ManifestConnector{Executable: "tool", LocationFlags: []string{"localfs"}}); err != nil {
+	if err := valid(ManifestConnector{Type: "importer", Executable: "tool", LocationFlags: []string{"localfs"}}); err != nil {
 		t.Errorf("localfs native connector: %v", err)
 	}
 
-	if err := valid(ManifestConnector{}); err == nil {
+	if err := valid(ManifestConnector{Type: "importer"}); err == nil {
 		t.Error("connector with neither executable nor image_id should fail")
 	}
-	if err := valid(ManifestConnector{Executable: "tool", ImageID: "sha256:aa"}); err == nil {
+	if err := valid(ManifestConnector{Type: "importer", Executable: "tool", ImageID: "sha256:aa"}); err == nil {
 		t.Error("connector with both executable and image_id should fail")
 	}
-	if err := valid(ManifestConnector{Executable: "tool", Image: "reg/img:1"}); err == nil {
+	if err := valid(ManifestConnector{Type: "importer", Executable: "tool", Image: "reg/img:1"}); err == nil {
 		t.Error("image without image_id should fail")
 	}
-	if err := valid(ManifestConnector{ImageID: "sha256:aa", LocationFlags: []string{"localfs"}}); err == nil {
+	if err := valid(ManifestConnector{Type: "importer", ImageID: "sha256:aa", LocationFlags: []string{"localfs"}}); err == nil {
 		t.Error("localfs image connector should fail")
 	}
-	if err := valid(ManifestConnector{Executable: "tool", LocationFlags: []string{"bogus"}}); err == nil {
+	if err := valid(ManifestConnector{Type: "importer", Executable: "tool", LocationFlags: []string{"bogus"}}); err == nil {
 		t.Error("unknown location flag should fail")
+	}
+
+	if err := valid(ManifestConnector{Executable: "tool"}); err == nil {
+		t.Error("a manifest without a type is invalid")
 	}
 }
 
