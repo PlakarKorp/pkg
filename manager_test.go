@@ -714,6 +714,49 @@ func TestQueryMergesRemoteIndex(t *testing.T) {
 	}
 }
 
+func TestQueryFetchesIndexFromIndexURL(t *testing.T) {
+	const index = `{
+		"version": "v1.0.0",
+		"integrations": [
+			{
+				"name": "s3",
+				"edition": "community",
+				"api": "v1.1.0",
+				"version": "v2.0.0"
+			}
+		]
+	}`
+
+	// A mirror of the distribution tree serves the index at its root.
+	var path string
+	mirror := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.Path
+		io.WriteString(w, index)
+	}))
+	defer mirror.Close()
+
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "the api must not be consulted", http.StatusTeapot)
+	}))
+	defer api.Close()
+
+	m, _ := New(newFakeBackend(), &Options{
+		ApiURL:   api.URL,
+		IndexURL: mirror.URL + "/integrations-" + PLUGIN_BUNDLE_VERSION + ".json",
+	})
+
+	got, err := m.Query(nil)
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if path != "/integrations-"+PLUGIN_BUNDLE_VERSION+".json" {
+		t.Errorf("index fetched from %q, want it at the mirror root", path)
+	}
+	if len(got) != 1 || got[0].Name != "s3" {
+		t.Fatalf("Query = %+v, want the mirror's s3", got)
+	}
+}
+
 func TestQueryStageDerivation(t *testing.T) {
 	cases := map[string]string{
 		"v1.0.0":         "stable",

@@ -60,6 +60,7 @@ type Manager struct {
 	repository      *url.URL
 	edition         string
 	api             *url.URL
+	index           *url.URL
 	reqhook         RequestHook
 	binaryNeedsAuth bool
 	useragent       string
@@ -70,6 +71,12 @@ type Options struct {
 	DistURL         string
 	Edition         string // community, devel, enterprise, ...
 	ApiURL          string
+
+	// IndexURL is where [Manager.Query] fetches the integrations
+	// index from, overriding the default location on the API
+	// server.  A mirror of the distribution tree serves it at its
+	// root, next to the edition directories.
+	IndexURL string
 	BinaryNeedsAuth bool
 	RequestHook     RequestHook
 
@@ -135,6 +142,14 @@ func New(store Backend, opts *Options) (*Manager, error) {
 			return nil, err
 		}
 		m.api = u
+	}
+
+	if opts.IndexURL != "" {
+		u, err := url.Parse(opts.IndexURL)
+		if err != nil {
+			return nil, err
+		}
+		m.index = u
 	}
 
 	if m.useragent == "" {
@@ -581,12 +596,16 @@ func (p *Manager) Query(opts *QueryOptions) (ret []*Integration, err error) {
 	}
 
 	if !opts.OnlyLocal {
-		if p.api == nil {
-			return nil, ErrNoApiURL
+		from, endp := p.index, ""
+		if from == nil {
+			if p.api == nil {
+				return nil, ErrNoApiURL
+			}
+			from = p.api
+			endp = "v1/integrations/integrations-" + PLUGIN_BUNDLE_VERSION + ".json"
 		}
 
-		endp := "v1/integrations/integrations-" + PLUGIN_BUNDLE_VERSION + ".json"
-		res, err := p.fetch(p.api, endp, false)
+		res, err := p.fetch(from, endp, false)
 		if err != nil {
 			return nil, err
 		}
