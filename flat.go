@@ -205,7 +205,10 @@ func (f *FlatBackend) extract(destDir, ptar string) error {
 		Strip: base,
 	})
 	if err != nil {
-		return err
+		return errors.Join(err, fsexp.Close(f.kcontext))
+	}
+	if err := fsexp.Close(f.kcontext); err != nil {
+		return fmt.Errorf("failed to close the fs exporter: %w", err)
 	}
 
 	if err := os.Rename(tmpdir+"/content", destDir); err != nil {
