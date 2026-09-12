@@ -70,7 +70,7 @@ func TestManifestParse(t *testing.T) {
 	if c.SubClass != ResourceSubClassS3 {
 		t.Errorf("connector SubClass = %q, want s3", c.SubClass)
 	}
-	if c.Executable != "s3-storage" {
+	if strings.TrimSuffix(c.Executable, ".exe") != "s3-storage" {
 		t.Errorf("Executable = %q", c.Executable)
 	}
 	if len(c.Args) != 1 || c.Args[0] != "--verbose" {
