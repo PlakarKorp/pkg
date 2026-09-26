@@ -34,6 +34,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"time"
 
 	"golang.org/x/mod/semver"
 )
@@ -51,6 +52,7 @@ var (
 	ErrNoDistURL             = errors.New("no DistURL provided")
 	ErrNoApiURL              = errors.New("no ApiURL provided")
 	ErrBadEdition            = errors.New("bad edition")
+	ErrBadRegistry           = errors.New("bad registry")
 
 	editionre = regexp.MustCompile(`^[-_a-zA-Z0-9]+$`)
 )
@@ -65,6 +67,10 @@ type Manager struct {
 	binaryNeedsAuth bool
 	useragent       string
 	verifier        Verifier
+	registries      []registry
+
+	// registryClient fetches the indexes of the registries.
+	registryClient *http.Client
 }
 
 type Options struct {
@@ -87,6 +93,10 @@ type Options struct {
 	// Verifier decides whether an artifact may be installed. When nil,
 	// nothing is verified and no signature is fetched.
 	Verifier Verifier
+
+	// Registries are additional package registries whose indexes
+	// [Manager.QueryAll] merges after the official one, in order.
+	Registries []Registry
 }
 
 // WithBearer adds an Authorization header with the Bearer token
@@ -151,6 +161,13 @@ func New(store Backend, opts *Options) (*Manager, error) {
 		}
 		m.index = u
 	}
+
+	registries, err := parseRegistries(opts.Registries)
+	if err != nil {
+		return nil, err
+	}
+	m.registries = registries
+	m.registryClient = &http.Client{Timeout: registryIndexTimeout}
 
 	if m.useragent == "" {
 		m.useragent = "pkg/v0.0.1"
@@ -348,6 +365,10 @@ func (p *Manager) repoFor(edition string) (*url.URL, error) {
 }
 
 func (p *Manager) fetch(url *url.URL, endpoint string, reqauth bool) (*http.Response, error) {
+	return p.fetchWith(http.DefaultClient, url, endpoint, reqauth)
+}
+
+func (p *Manager) fetchWith(client *http.Client, url *url.URL, endpoint string, reqauth bool) (*http.Response, error) {
 	u := *url
 	u.Path = path.Join(u.Path, endpoint)
 
@@ -367,7 +388,7 @@ func (p *Manager) fetch(url *url.URL, endpoint string, reqauth bool) (*http.Resp
 		return nil, ErrAuthorizationRequired
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -580,7 +601,31 @@ type QueryOptions struct {
 	OnlyLocal bool
 }
 
-func (p *Manager) Query(opts *QueryOptions) (ret []*Integration, err error) {
+// QueryResult is the outcome of [Manager.QueryAll].
+type QueryResult struct {
+	Integrations []*Integration
+
+	// Warnings reports the registries that could not be queried and
+	// the registry entries shadowed by an earlier source.
+	Warnings []string
+}
+
+// Query returns the integrations of [Manager.QueryAll], without its
+// warnings.
+func (p *Manager) Query(opts *QueryOptions) ([]*Integration, error) {
+	res, err := p.QueryAll(opts)
+	if err != nil {
+		return nil, err
+	}
+	return res.Integrations, nil
+}
+
+// QueryAll lists the installed integrations along with the ones available
+// from the official index and then from each additional registry, in
+// order.  An integration provided by an earlier source is not taken from a
+// later registry.  A registry that can't be queried is reported in the
+// warnings instead of failing the query.
+func (p *Manager) QueryAll(opts *QueryOptions) (*QueryResult, error) {
 	if opts == nil {
 		opts = &QueryOptions{}
 	}
@@ -593,6 +638,7 @@ func (p *Manager) Query(opts *QueryOptions) (ret []*Integration, err error) {
 		return nil, fmt.Errorf("%w: %q", ErrBadEdition, edition)
 	}
 
+	res := &QueryResult{}
 	packages := make(map[string]*Integration)
 	for pkg, err := range p.List() {
 		if err != nil {
@@ -640,58 +686,25 @@ func (p *Manager) Query(opts *QueryOptions) (ret []*Integration, err error) {
 			endp = "v1/integrations/integrations-" + PLUGIN_BUNDLE_VERSION + ".json"
 		}
 
-		res, err := p.fetch(from, endp, false)
-		if err != nil {
-			return nil, err
-		}
-		defer res.Body.Close()
-
-		var index IntegrationIndex
-		err = json.NewDecoder(res.Body).Decode(&index)
+		index, err := p.fetchIndex(http.DefaultClient, from, endp)
 		if err != nil {
 			return nil, err
 		}
 
-		for i := range index.Integrations {
-			plug := &index.Integrations[i]
+		// providers maps an integration name to the source it was
+		// taken from.
+		providers := make(map[string]string)
+		mergeIndex(packages, providers, index, edition, "")
 
-			if plug.API != PLUGIN_API_VERSION {
+		for _, reg := range p.registries {
+			endp := "integrations-" + PLUGIN_BUNDLE_VERSION + ".json"
+			index, err := p.fetchIndex(p.registryClient, reg.url, endp)
+			if err != nil {
+				res.Warnings = append(res.Warnings, fmt.Sprintf("registry %s: %v", reg.name, err))
 				continue
 			}
-			if plug.Edition != edition {
-				continue
-			}
-
-			// Set compatibility fields for the former model
-			plug.Id = plug.Name
-			plug.LatestVersion = plug.Version
-			plug.Stage = stageOf(plug.Version)
-			plug.Types.Destination = plug.HasConnectorType("exporter")
-			plug.Types.Source = plug.HasConnectorType("importer")
-			plug.Types.Storage = plug.HasConnectorType("storage")
-
-			if p, ok := packages[plug.Id]; ok {
-				p.Id = plug.Id
-				p.DisplayName = plug.DisplayName
-				p.Description = plug.Description
-				p.Homepage = plug.Homepage
-				p.Repository = plug.Repository
-				p.License = plug.License
-				p.Tags = plug.Tags
-				p.LatestVersion = plug.LatestVersion
-				p.Stage = plug.Stage
-				p.Types = plug.Types
-				p.Documentation = plug.Documentation
-				p.Connectors = plug.Connectors
-				p.Icon = plug.Icon
-				p.Featured = plug.Featured
-
-				p.Installation.Available = true
-			} else {
-				plug.Installation.Status = "not-installed"
-				plug.Installation.Available = true
-				packages[plug.Id] = plug
-			}
+			w := mergeIndex(packages, providers, index, edition, reg.name)
+			res.Warnings = append(res.Warnings, w...)
 		}
 	}
 
@@ -714,11 +727,77 @@ func (p *Manager) Query(opts *QueryOptions) (ret []*Integration, err error) {
 			continue
 		}
 
-		ret = append(ret, plug)
+		res.Integrations = append(res.Integrations, plug)
 	}
 
-	slices.SortFunc(ret, func(a, b *Integration) int {
+	slices.SortFunc(res.Integrations, func(a, b *Integration) int {
 		return strings.Compare(a.Name, b.Name)
 	})
-	return ret, nil
+	return res, nil
+}
+
+const (
+	// maxIndexSize bounds the size of an integrations index.
+	maxIndexSize = 64 << 20 // 64 MiB
+
+	// registryIndexTimeout bounds the fetch of a registry index, so
+	// that a stalled registry doesn't hang the query.
+	registryIndexTimeout = 30 * time.Second
+)
+
+// fetchIndex retrieves an integrations index.  It never authenticates:
+// the index is public, and the request may target a third-party registry.
+func (p *Manager) fetchIndex(client *http.Client, from *url.URL, endpoint string) (*IntegrationIndex, error) {
+	res, err := p.fetchWith(client, from, endpoint, false)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	var index IntegrationIndex
+	if err := json.NewDecoder(io.LimitReader(res.Body, maxIndexSize)).Decode(&index); err != nil {
+		return nil, err
+	}
+	return &index, nil
+}
+
+// mergeIndex merges the entries of index matching the current plugin API
+// and the given edition into packages, keeping the first entry of a name.
+// registry is the name of the registry the index comes from, empty for the
+// official one.  An entry never replaces one taken from another source, as
+// recorded in providers (by registry name, empty for the official index):
+// the entries of a registry shadowed that way are reported in the returned
+// warnings.
+func mergeIndex(packages map[string]*Integration, providers map[string]string, index *IntegrationIndex, edition, registry string) (warnings []string) {
+	seen := make(map[string]bool)
+	for i := range index.Integrations {
+		plug := &index.Integrations[i]
+
+		if plug.API != PLUGIN_API_VERSION || plug.Edition != edition || seen[plug.Name] {
+			continue
+		}
+		seen[plug.Name] = true
+
+		plug.normalize(registry)
+
+		if by, ok := providers[plug.Id]; ok && by != registry {
+			if registry != "" {
+				if by == "" {
+					by = "official"
+				}
+				warnings = append(warnings, fmt.Sprintf("registry %s: integration %s shadowed by %s", registry, plug.Id, by))
+			}
+			continue
+		}
+		providers[plug.Id] = registry
+
+		if p, ok := packages[plug.Id]; ok {
+			p.merge(plug)
+		} else {
+			plug.Installation.Status = "not-installed"
+			plug.Installation.Available = true
+			packages[plug.Id] = plug
+		}
+	}
+	return warnings
 }
