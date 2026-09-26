@@ -352,6 +352,23 @@ func (f *FlatBackend) reload(pkg *Package) error {
 	return nil
 }
 
+// Manifest returns the manifest of an already-installed package and the
+// directory it was extracted to. It is read-only: unlike reload, it never
+// extracts the package's ptar archive, and returns an error if the package
+// isn't extracted or its manifest can't be loaded.
+func (f *FlatBackend) Manifest(pkg *Package) (*Manifest, string, error) {
+	extracted := filepath.Join(f.cachedir, strings.TrimSuffix(pkg.Filename(), ".ptar"))
+
+	m, err := f.loadmanifest(filepath.Join(extracted, "manifest.yaml"))
+	if err != nil {
+		return nil, "", err
+	}
+
+	return m, extracted, nil
+}
+
+var _ ManifestReader = (*FlatBackend)(nil)
+
 func (f *FlatBackend) LoadAll() error {
 	for pkg, err := range f.List("") {
 		if err != nil {
