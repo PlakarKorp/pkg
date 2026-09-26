@@ -3,6 +3,8 @@ package pkg
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -359,8 +361,12 @@ func TestRegistryRequestsCarryNoToken(t *testing.T) {
 	}
 }
 
+// An integration installed from a registry takes that registry's entry,
+// even when the official index lists the same name.
 func TestQueryAllInstalledFromRegistry(t *testing.T) {
-	official := indexServer(t, entry("s3", "official"))
+	officialTalos := entry("talos", "official")
+	officialTalos.Version = "v9.0.0"
+	official := indexServer(t, entry("s3", "official"), officialTalos)
 
 	talos := entry("talos", "lab")
 	talos.DisplayName = "Talos Linux"
@@ -369,7 +375,10 @@ func TestQueryAllInstalledFromRegistry(t *testing.T) {
 	talos.Connectors = []Connector{{Type: "importer"}}
 	lab := indexServer(t, talos)
 
-	m, err := New(newFakeBackend(pkgVer("talos", "v1.3.0")), &Options{
+	installed := pkgVer("talos", "v1.3.0")
+	be := newOriginBackend(installed)
+	be.origins[installed.Filename()] = lab.URL + "/"
+	m, err := New(be, &Options{
 		ApiURL:     official.URL,
 		Registries: []Registry{{Name: "lab", URL: lab.URL}},
 	})
@@ -399,6 +408,123 @@ func TestQueryAllInstalledFromRegistry(t *testing.T) {
 	}
 	if in.Registry != "lab" {
 		t.Errorf("talos registry = %q, want lab", in.Registry)
+	}
+	if len(res.Warnings) != 0 {
+		t.Errorf("warnings = %q, want none", res.Warnings)
+	}
+}
+
+// An integration installed without a recorded origin comes from the
+// official tree, and never takes a registry's entry, even when only a
+// registry lists it.  The warning then says the installed package has no
+// recorded origin, not that the official index shadowed it: it doesn't
+// even list the name.
+func TestQueryAllInstalledWithoutOriginIgnoresRegistries(t *testing.T) {
+	official := indexServer(t, entry("s3", "official"))
+	lab := indexServer(t, entry("talos", "lab"), entry("s3", "lab"))
+
+	m, err := New(newOriginBackend(pkgVer("talos", "v1.3.0"), pkgVer("s3", "v0.9.0")), &Options{
+		ApiURL:     official.URL,
+		Registries: []Registry{{Name: "lab", URL: lab.URL}},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	res, err := m.QueryAll(nil)
+	if err != nil {
+		t.Fatalf("QueryAll: %v", err)
+	}
+	got := byName(res.Integrations)
+	talos, s3 := got["talos"], got["s3"]
+	if talos == nil || s3 == nil {
+		t.Fatalf("integrations = %v, want talos and s3", got)
+	}
+	if talos.Description != "" || talos.LatestVersion != "v1.3.0" || talos.Registry != "" || talos.Installation.Available {
+		t.Errorf("talos = description %q latest %q registry %q available %v, want the local entry only",
+			talos.Description, talos.LatestVersion, talos.Registry, talos.Installation.Available)
+	}
+	if s3.Description != "official" || s3.Registry != "" {
+		t.Errorf("s3 = description %q registry %q, want the official entry", s3.Description, s3.Registry)
+	}
+	want := []string{
+		"registry lab: integration talos ignored: installed package has no recorded origin (reinstall it to track this registry)",
+		"registry lab: integration s3 shadowed by official",
+	}
+	if !slices.Equal(res.Warnings, want) {
+		t.Errorf("warnings = %q, want %q", res.Warnings, want)
+	}
+}
+
+// An integration installed from a registry takes that registry's entry
+// even when another registry also lists it: the warning says it was
+// installed from the first registry, not that it shadowed the second.
+func TestQueryAllInstalledFromRegistryIgnoresOtherRegistry(t *testing.T) {
+	official := indexServer(t)
+	lab := indexServer(t, entry("talos", "lab"))
+	other := indexServer(t, entry("talos", "other"))
+
+	installed := pkgVer("talos", "v1.3.0")
+	be := newOriginBackend(installed)
+	be.origins[installed.Filename()] = lab.URL
+	m, err := New(be, &Options{
+		ApiURL: official.URL,
+		Registries: []Registry{
+			{Name: "lab", URL: lab.URL},
+			{Name: "other", URL: other.URL},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	res, err := m.QueryAll(nil)
+	if err != nil {
+		t.Fatalf("QueryAll: %v", err)
+	}
+	talos := byName(res.Integrations)["talos"]
+	if talos == nil || talos.Description != "lab" || talos.Registry != "lab" {
+		t.Fatalf("talos = %+v, want lab's entry", talos)
+	}
+	want := []string{"registry other: integration talos ignored: installed from registry lab"}
+	if !slices.Equal(res.Warnings, want) {
+		t.Errorf("warnings = %q, want %q", res.Warnings, want)
+	}
+}
+
+// An integration installed from a registry that is no longer configured
+// keeps its local entry, with a warning.  A registry that still lists the
+// name doesn't add a second warning: the first one already says why the
+// package is ignored.
+func TestQueryAllInstalledFromRemovedRegistry(t *testing.T) {
+	official := indexServer(t, entry("talos", "official"))
+	lab := indexServer(t, entry("talos", "lab"))
+
+	installed := pkgVer("talos", "v1.3.0")
+	be := newOriginBackend(installed)
+	be.origins[installed.Filename()] = "https://gone.example.com/dist"
+	m, err := New(be, &Options{
+		ApiURL:     official.URL,
+		Registries: []Registry{{Name: "lab", URL: lab.URL}},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	res, err := m.QueryAll(nil)
+	if err != nil {
+		t.Fatalf("QueryAll: %v", err)
+	}
+	talos := byName(res.Integrations)["talos"]
+	if talos == nil {
+		t.Fatal("talos missing from results")
+	}
+	if talos.Description != "" || talos.LatestVersion != "v1.3.0" || talos.Registry != "" || talos.Installation.Status != "installed" {
+		t.Errorf("talos = %+v, want the local entry only", talos)
+	}
+	want := []string{"integration talos: installed from https://gone.example.com/dist, which is not a configured registry"}
+	if !slices.Equal(res.Warnings, want) {
+		t.Errorf("warnings = %q, want %q", res.Warnings, want)
 	}
 }
 
@@ -512,6 +638,541 @@ func TestNewRejectsBadRegistries(t *testing.T) {
 	}})
 	if err != nil {
 		t.Errorf("New with valid registries: %v", err)
+	}
+}
+
+// dist is a distribution tree served over HTTP, recording the requested
+// paths.
+type dist struct {
+	*httptest.Server
+
+	mu    sync.Mutex
+	paths []string
+}
+
+func (d *dist) requested() []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return slices.Clone(d.paths)
+}
+
+// distServer serves a community distribution tree whose recipes point
+// each name of versions at its version, along with the packages of any
+// version of those names, whose content is label.  Signatures are served
+// too, and everything else is a 404.  A non-zero status makes every
+// request fail with it.
+func distServer(t *testing.T, label string, status int, versions map[string]string) *dist {
+	t.Helper()
+
+	d := &dist{}
+	d.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		d.mu.Lock()
+		d.paths = append(d.paths, r.URL.Path)
+		d.mu.Unlock()
+
+		if status != 0 {
+			w.WriteHeader(status)
+			return
+		}
+
+		dir, file, ok := strings.Cut(strings.TrimPrefix(r.URL.Path, "/community/"+PLUGIN_API_VERSION+"/"), "/")
+		version, known := versions[dir]
+		if !ok || !known {
+			http.NotFound(w, r)
+			return
+		}
+
+		switch {
+		case strings.HasSuffix(file, sigSuffix):
+			w.Write([]byte("sig"))
+		case file == "recipe.yaml":
+			fmt.Fprintf(w, "name: %s\nversion: %s/%s\n", dir, dir, version)
+		case strings.HasSuffix(file, ".ptar"):
+			w.Write([]byte(label))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(d.Close)
+	return d
+}
+
+// originBackend is a fakeBackend remembering origins, by package filename.
+type originBackend struct {
+	*fakeBackend
+	origins map[string]string
+	setErr  error
+}
+
+func newOriginBackend(pkgs ...*Package) *originBackend {
+	return &originBackend{fakeBackend: newFakeBackend(pkgs...), origins: map[string]string{}}
+}
+
+func (b *originBackend) SetOrigin(pkg *Package, origin string) error {
+	if b.setErr != nil {
+		return b.setErr
+	}
+	b.origins[pkg.Filename()] = origin
+	return nil
+}
+
+func (b *originBackend) Origin(pkg *Package) (string, error) {
+	return b.origins[pkg.Filename()], nil
+}
+
+var _ OriginStore = (*originBackend)(nil)
+
+// recordOrigins returns a Verifier accepting everything and recording the
+// origin of each artifact.
+func recordOrigins(origins *[]string) Verifier {
+	return VerifierFunc(func(a *Artifact, rd io.Reader) error {
+		*origins = append(*origins, a.Origin)
+		_, err := io.Copy(io.Discard, rd)
+		return err
+	})
+}
+
+// loadedFrom checks that the only package loaded is name at version, with
+// content label.
+func loadedFrom(t *testing.T, be *originBackend, name, version, label string) *Package {
+	t.Helper()
+	if len(be.loaded) != 1 {
+		t.Fatalf("loaded %d packages, want 1", len(be.loaded))
+	}
+	pkg := be.loaded[0]
+	if pkg.Name != name || pkg.Version != version {
+		t.Fatalf("loaded %s %s, want %s %s", pkg.Name, pkg.Version, name, version)
+	}
+	if got := string(be.loadData[pkg.Filename()]); got != label {
+		t.Errorf("loaded content %q, want %q", got, label)
+	}
+	return pkg
+}
+
+func TestAddImplicitFetchFromRegistry(t *testing.T) {
+	official := distServer(t, "official", 0, nil)
+	lab := distServer(t, "lab", 0, map[string]string{"talos": "v1.4.0"})
+
+	var origins []string
+	hookCalls := 0
+	be := newOriginBackend()
+	m, err := New(be, &Options{
+		DistURL:         official.URL,
+		BinaryNeedsAuth: true,
+		RequestHook: func(*http.Request) error {
+			hookCalls++
+			return nil
+		},
+		Verifier:   recordOrigins(&origins),
+		Registries: []Registry{{Name: "lab", URL: lab.URL}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.Add("talos", &AddOptions{ImplicitFetch: true}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	pkg := loadedFrom(t, be, "talos", "v1.4.0", "lab")
+	want := []string{lab.URL + "/community", lab.URL + "/community"}
+	if !slices.Equal(origins, want) {
+		t.Errorf("verified origins = %q, want %q (recipe and package)", origins, want)
+	}
+	if got := be.origins[pkg.Filename()]; got != lab.URL {
+		t.Errorf("recorded origin = %q, want %q", got, lab.URL)
+	}
+	if hookCalls != 0 {
+		t.Errorf("request hook called %d times, want 0", hookCalls)
+	}
+}
+
+func TestAddImplicitFetchPrefersOfficial(t *testing.T) {
+	official := distServer(t, "official", 0, map[string]string{"talos": "v1.0.0"})
+	lab := distServer(t, "lab", 0, map[string]string{"talos": "v2.0.0"})
+
+	be := newOriginBackend()
+	m, err := New(be, &Options{
+		DistURL:    official.URL,
+		Registries: []Registry{{Name: "lab", URL: lab.URL}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.Add("talos", &AddOptions{ImplicitFetch: true}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	loadedFrom(t, be, "talos", "v1.0.0", "official")
+	if len(be.origins) != 0 {
+		t.Errorf("origins recorded for an official install: %v", be.origins)
+	}
+	for _, p := range lab.requested() {
+		if strings.HasSuffix(p, ".ptar") {
+			t.Errorf("package fetched from the registry: %s", p)
+		}
+	}
+}
+
+func TestAddOfficialErrorDoesNotFallBack(t *testing.T) {
+	official := distServer(t, "official", http.StatusInternalServerError, nil)
+	lab := distServer(t, "lab", 0, map[string]string{"talos": "v2.0.0"})
+
+	be := newOriginBackend()
+	m, err := New(be, &Options{
+		DistURL:    official.URL,
+		Registries: []Registry{{Name: "lab", URL: lab.URL}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.Add("talos", &AddOptions{ImplicitFetch: true}); err == nil {
+		t.Fatal("Add succeeded, want the official error")
+	}
+	if len(be.loaded) != 0 {
+		t.Errorf("loaded %v, want nothing", be.loaded)
+	}
+	if got := lab.requested(); len(got) != 0 {
+		t.Errorf("registry contacted: %q", got)
+	}
+}
+
+func TestAddNotFoundAnywhere(t *testing.T) {
+	official := distServer(t, "official", 0, nil)
+	lab := distServer(t, "lab", 0, nil)
+
+	m, err := New(newOriginBackend(), &Options{
+		DistURL:    official.URL,
+		Registries: []Registry{{Name: "lab", URL: lab.URL}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = m.Add("talos", &AddOptions{ImplicitFetch: true})
+	want := "talos: not found in the official repository or any configured registry: fetch failed with 404 Not Found"
+	if err == nil || err.Error() != want || !isNotFound(err) {
+		t.Errorf("Add err = %v, want %q wrapping the official not-found error", err, want)
+	}
+	if len(lab.requested()) == 0 {
+		t.Error("registry not consulted")
+	}
+}
+
+func TestAddRegistriesInOrder(t *testing.T) {
+	official := distServer(t, "official", 0, nil)
+	empty := distServer(t, "empty", 0, nil)
+	lab := distServer(t, "lab", 0, map[string]string{"talos": "v1.0.0"})
+	other := distServer(t, "other", 0, map[string]string{"talos": "v2.0.0"})
+
+	be := newOriginBackend()
+	m, err := New(be, &Options{
+		DistURL: official.URL,
+		Registries: []Registry{
+			{Name: "empty", URL: empty.URL},
+			{Name: "lab", URL: lab.URL},
+			{Name: "other", URL: other.URL},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.Add("talos", &AddOptions{ImplicitFetch: true}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	pkg := loadedFrom(t, be, "talos", "v1.0.0", "lab")
+	if got := be.origins[pkg.Filename()]; got != lab.URL {
+		t.Errorf("recorded origin = %q, want %q", got, lab.URL)
+	}
+	if got := other.requested(); len(got) != 0 {
+		t.Errorf("later registry contacted: %q", got)
+	}
+}
+
+func TestUpgradeUsesRecordedOrigin(t *testing.T) {
+	official := distServer(t, "official", 0, map[string]string{"talos": "v3.0.0"})
+	lab := distServer(t, "lab", 0, map[string]string{"talos": "v2.0.0"})
+
+	installed := pkgVer("talos", "v1.0.0")
+	be := newOriginBackend(installed)
+	be.origins[installed.Filename()] = lab.URL
+	m, err := New(be, &Options{
+		DistURL:    official.URL,
+		Registries: []Registry{{Name: "lab", URL: lab.URL}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.Add("talos", &AddOptions{ImplicitFetch: true, Upgrade: true}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	pkg := loadedFrom(t, be, "talos", "v2.0.0", "lab")
+	if got := be.origins[pkg.Filename()]; got != lab.URL {
+		t.Errorf("recorded origin = %q, want %q", got, lab.URL)
+	}
+	if len(be.unloaded) != 1 || be.unloaded[0].Version != "v1.0.0" {
+		t.Errorf("unloaded %v, want v1.0.0", be.unloaded)
+	}
+	if got := official.requested(); len(got) != 0 {
+		t.Errorf("official contacted: %q", got)
+	}
+
+	// up to date: the registry's recipe is authoritative.
+	err = m.Add("talos", &AddOptions{ImplicitFetch: true, Upgrade: true})
+	if !errors.Is(err, ErrAlreadyInstalled) {
+		t.Errorf("second upgrade err = %v, want ErrAlreadyInstalled", err)
+	}
+}
+
+func TestUpgradeWithoutOriginUsesOfficial(t *testing.T) {
+	official := distServer(t, "official", 0, map[string]string{"talos": "v3.0.0"})
+	lab := distServer(t, "lab", 0, map[string]string{"talos": "v2.0.0"})
+
+	be := newOriginBackend(pkgVer("talos", "v1.0.0"))
+	m, err := New(be, &Options{
+		DistURL:    official.URL,
+		Registries: []Registry{{Name: "lab", URL: lab.URL}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.Add("talos", &AddOptions{ImplicitFetch: true, Upgrade: true}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	loadedFrom(t, be, "talos", "v3.0.0", "official")
+	if len(be.origins) != 0 {
+		t.Errorf("origins recorded for an official install: %v", be.origins)
+	}
+	if got := lab.requested(); len(got) != 0 {
+		t.Errorf("registry contacted: %q", got)
+	}
+}
+
+func TestUpgradeFromRemovedRegistry(t *testing.T) {
+	official := distServer(t, "official", 0, map[string]string{"talos": "v3.0.0"})
+	lab := distServer(t, "lab", 0, map[string]string{"talos": "v2.0.0"})
+
+	installed := pkgVer("talos", "v1.0.0")
+	be := newOriginBackend(installed)
+	be.origins[installed.Filename()] = "https://gone.example.com/dist"
+	m, err := New(be, &Options{
+		DistURL:    official.URL,
+		Registries: []Registry{{Name: "lab", URL: lab.URL}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = m.Add("talos", &AddOptions{ImplicitFetch: true, Upgrade: true})
+	if !errors.Is(err, ErrUnknownRegistry) {
+		t.Fatalf("Add err = %v, want ErrUnknownRegistry", err)
+	}
+	want := "talos: installed from https://gone.example.com/dist, which is not a configured registry"
+	if err.Error() != want {
+		t.Errorf("Add err = %q, want %q", err, want)
+	}
+	if len(be.loaded) != 0 || len(be.unloaded) != 0 {
+		t.Errorf("loaded %v unloaded %v, want nothing touched", be.loaded, be.unloaded)
+	}
+	if len(official.requested()) != 0 || len(lab.requested()) != 0 {
+		t.Error("a registry was contacted")
+	}
+}
+
+func TestAddExplicitVersionFromRegistry(t *testing.T) {
+	official := distServer(t, "official", 0, nil)
+	lab := distServer(t, "lab", 0, map[string]string{"talos": "v2.0.0"})
+
+	be := newOriginBackend()
+	m, err := New(be, &Options{
+		DistURL:    official.URL,
+		Registries: []Registry{{Name: "lab", URL: lab.URL}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.Add("talos", &AddOptions{ImplicitFetch: true, Version: "v1.5.0"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	pkg := loadedFrom(t, be, "talos", "v1.5.0", "lab")
+	if got := be.origins[pkg.Filename()]; got != lab.URL {
+		t.Errorf("recorded origin = %q, want %q", got, lab.URL)
+	}
+}
+
+func TestAddRegistryOriginFailureUnloads(t *testing.T) {
+	official := distServer(t, "official", 0, nil)
+	lab := distServer(t, "lab", 0, map[string]string{"talos": "v2.0.0"})
+
+	be := newOriginBackend()
+	be.setErr = errors.New("disk full")
+	m, err := New(be, &Options{
+		DistURL:    official.URL,
+		Registries: []Registry{{Name: "lab", URL: lab.URL}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = m.Add("talos", &AddOptions{ImplicitFetch: true})
+	if !errors.Is(err, be.setErr) {
+		t.Fatalf("Add err = %v, want %v", err, be.setErr)
+	}
+	if len(be.pkgs) != 0 {
+		t.Errorf("installed %v, want nothing left behind", be.pkgs)
+	}
+}
+
+// A recipe must describe the name it is published under, or a registry
+// could install, or upgrade over, another package.
+func TestAddRegistryRecipeNameMismatch(t *testing.T) {
+	official := distServer(t, "official", 0, nil)
+
+	var (
+		mu    sync.Mutex
+		paths []string
+	)
+	lab := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		mu.Unlock()
+		switch r.URL.Path {
+		case "/community/" + PLUGIN_API_VERSION + "/foo/recipe.yaml":
+			w.Write([]byte("name: talos\nversion: talos/v1.0.0\n"))
+		case "/community/" + PLUGIN_API_VERSION + "/foo/recipe.yaml" + sigSuffix:
+			w.Write([]byte("sig"))
+		default:
+			w.Write([]byte("lab"))
+		}
+	}))
+	defer lab.Close()
+
+	be := newOriginBackend(pkgVer("talos", "v0.1.0"))
+	m, err := New(be, &Options{
+		DistURL:    official.URL,
+		Registries: []Registry{{Name: "lab", URL: lab.URL}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = m.Add("foo", &AddOptions{ImplicitFetch: true, Upgrade: true})
+	if err == nil || !strings.Contains(err.Error(), "talos") {
+		t.Fatalf("Add err = %v, want a name mismatch", err)
+	}
+	if len(be.loaded) != 0 || len(be.unloaded) != 0 {
+		t.Errorf("loaded %v unloaded %v, want nothing touched", be.loaded, be.unloaded)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for _, p := range paths {
+		if strings.HasSuffix(p, ".ptar") {
+			t.Errorf("package fetched: %s", p)
+		}
+	}
+}
+
+// An installed package without a recorded origin comes from the official
+// tree, and is never looked up in the registries.
+func TestUpgradeInstalledWithoutOriginNoFallback(t *testing.T) {
+	backends := map[string]func() Backend{
+		"origin store":     func() Backend { return newOriginBackend(pkgVer("talos", "v1.0.0")) },
+		"not origin store": func() Backend { return newFakeBackend(pkgVer("talos", "v1.0.0")) },
+	}
+	for name, newBackend := range backends {
+		t.Run(name, func(t *testing.T) {
+			official := distServer(t, "official", 0, nil)
+			lab := distServer(t, "lab", 0, map[string]string{"talos": "v2.0.0"})
+
+			m, err := New(newBackend(), &Options{
+				DistURL:    official.URL,
+				Registries: []Registry{{Name: "lab", URL: lab.URL}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			err = m.Add("talos", &AddOptions{ImplicitFetch: true, Upgrade: true})
+			if !isNotFound(err) {
+				t.Errorf("Add err = %v, want the official not-found error", err)
+			}
+			if got := lab.requested(); len(got) != 0 {
+				t.Errorf("registry contacted: %q", got)
+			}
+		})
+	}
+}
+
+// A registry failing otherwise than with a 404 stops the lookup: a later
+// registry must not provide the name meanwhile.
+func TestAddRegistryErrorDoesNotFallBack(t *testing.T) {
+	official := distServer(t, "official", 0, nil)
+	lab1 := distServer(t, "lab1", http.StatusInternalServerError, nil)
+	lab2 := distServer(t, "lab2", 0, map[string]string{"talos": "v1.0.0"})
+
+	be := newOriginBackend()
+	m, err := New(be, &Options{
+		DistURL: official.URL,
+		Registries: []Registry{
+			{Name: "lab1", URL: lab1.URL},
+			{Name: "lab2", URL: lab2.URL},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = m.Add("talos", &AddOptions{ImplicitFetch: true})
+	if err == nil || !strings.Contains(err.Error(), "lab1") {
+		t.Fatalf("Add err = %v, want lab1's error", err)
+	}
+	if len(be.loaded) != 0 {
+		t.Errorf("loaded %v, want nothing", be.loaded)
+	}
+	if got := lab2.requested(); len(got) != 0 {
+		t.Errorf("later registry contacted: %q", got)
+	}
+}
+
+// A trailing slash on either the recorded origin or the configured URL
+// doesn't change the registry.
+func TestUpgradeOriginTrailingSlash(t *testing.T) {
+	for _, tt := range []struct{ name, recorded, configured string }{
+		{"configured with slash", "", "/"},
+		{"recorded with slash", "/", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			official := distServer(t, "official", 0, map[string]string{"talos": "v3.0.0"})
+			lab := distServer(t, "lab", 0, map[string]string{"talos": "v2.0.0"})
+
+			installed := pkgVer("talos", "v1.0.0")
+			be := newOriginBackend(installed)
+			be.origins[installed.Filename()] = lab.URL + tt.recorded
+			m, err := New(be, &Options{
+				DistURL:    official.URL,
+				Registries: []Registry{{Name: "lab", URL: lab.URL + tt.configured}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if err := m.Add("talos", &AddOptions{ImplicitFetch: true, Upgrade: true}); err != nil {
+				t.Fatalf("Add: %v", err)
+			}
+			pkg := loadedFrom(t, be, "talos", "v2.0.0", "lab")
+			if got := be.origins[pkg.Filename()]; got != lab.URL+tt.configured {
+				t.Errorf("recorded origin = %q, want the configured %q", got, lab.URL+tt.configured)
+			}
+		})
 	}
 }
 
