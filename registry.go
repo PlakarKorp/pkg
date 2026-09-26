@@ -36,8 +36,9 @@ type Registry struct {
 }
 
 type registry struct {
-	name string
-	url  *url.URL
+	name   string
+	url    *url.URL
+	rawurl string // as configured
 }
 
 // CheckRegistries reports whether [New] would accept regs as
@@ -78,7 +79,24 @@ func parseRegistries(regs []Registry) ([]registry, error) {
 			return nil, fmt.Errorf("%w %q: URL with credentials, query or fragment", ErrBadRegistry, r.Name)
 		}
 
-		ret = append(ret, registry{name: r.Name, url: u})
+		ret = append(ret, registry{name: r.Name, url: u, rawurl: r.URL})
 	}
 	return ret, nil
+}
+
+// A source is a distribution tree packages are fetched from: the official
+// one or an additional registry.
+type source struct {
+	url *url.URL // above the edition directories
+
+	// needsAuth tells whether packages require authorization.
+	needsAuth bool
+
+	// origin is the URL of the registry as configured, recorded on
+	// install, or "" for the official tree.
+	origin string
+}
+
+func (r *registry) source() *source {
+	return &source{url: r.url, origin: r.rawurl}
 }

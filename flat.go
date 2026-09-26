@@ -126,12 +126,13 @@ func (f *FlatBackend) List(name string) iter.Seq2[*Package, error] {
 	}
 }
 
-func (f *FlatBackend) installSignature(pkg *Package, sig []byte) error {
-	tmp, err := os.CreateTemp(f.pkgdir, "signature*")
+// installFile atomically writes data to dst, in the plugin directory.
+func (f *FlatBackend) installFile(dst string, data []byte) error {
+	tmp, err := os.CreateTemp(f.pkgdir, ".sidecar*")
 	if err != nil {
 		return err
 	}
-	if _, err := tmp.Write(sig); err != nil {
+	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
 		os.Remove(tmp.Name())
 		return err
@@ -142,7 +143,7 @@ func (f *FlatBackend) installSignature(pkg *Package, sig []byte) error {
 		return err
 	}
 
-	if err := os.Rename(tmp.Name(), f.sigpath(pkg)); err != nil {
+	if err := os.Rename(tmp.Name(), dst); err != nil {
 		os.Remove(tmp.Name())
 		return err
 	}
@@ -242,6 +243,12 @@ func (f *FlatBackend) loadmanifest(mpath string) (*Manifest, error) {
 }
 
 func (f *FlatBackend) Load(pkg *Package, rd io.Reader, sig []byte) error {
+	// A package is recorded as coming from a registry after it is
+	// loaded, so any origin left for this filename is stale.
+	if err := os.Remove(f.originpath(pkg)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
 	fp, err := os.CreateTemp(f.pkgdir, "."+pkg.Name+"-*")
 	if err != nil {
 		return err
@@ -276,7 +283,7 @@ func (f *FlatBackend) Load(pkg *Package, rd io.Reader, sig []byte) error {
 	}
 
 	if sig != nil {
-		if err := f.installSignature(pkg, sig); err != nil {
+		if err := f.installFile(f.sigpath(pkg), sig); err != nil {
 			f.unload(fp.Name(), extracted)
 			return err
 		}
@@ -369,6 +376,34 @@ func (f *FlatBackend) Manifest(pkg *Package) (*Manifest, string, error) {
 
 var _ ManifestReader = (*FlatBackend)(nil)
 
+// originSuffix names the sidecar recording the registry a package was
+// fetched from.
+const originSuffix = ".origin"
+
+func (f *FlatBackend) originpath(pkg *Package) string {
+	return filepath.Join(f.pkgdir, pkg.Filename()+originSuffix)
+}
+
+// SetOrigin records the registry pkg was fetched from.
+func (f *FlatBackend) SetOrigin(pkg *Package, origin string) error {
+	return f.installFile(f.originpath(pkg), []byte(origin+"\n"))
+}
+
+// Origin returns the registry pkg was fetched from, or "" if none was
+// recorded.
+func (f *FlatBackend) Origin(pkg *Package) (string, error) {
+	b, err := os.ReadFile(f.originpath(pkg))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(string(b)), nil
+}
+
+var _ OriginStore = (*FlatBackend)(nil)
+
 func (f *FlatBackend) LoadAll() error {
 	for pkg, err := range f.List("") {
 		if err != nil {
@@ -387,6 +422,10 @@ func (f *FlatBackend) unload(pkgfile, extracted string) error {
 	// Removed too, so a later install of the same version cannot inherit
 	// the previous one's signature.
 	if rmerr := os.Remove(pkgfile + sigSuffix); rmerr != nil && !os.IsNotExist(rmerr) {
+		err = errors.Join(err, rmerr)
+	}
+
+	if rmerr := os.Remove(pkgfile + originSuffix); rmerr != nil && !os.IsNotExist(rmerr) {
 		err = errors.Join(err, rmerr)
 	}
 

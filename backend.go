@@ -48,3 +48,10 @@ type Backend interface {
 	// Unload a plugin
 	Unload(*Package) error
 }
+
+// OriginStore is implemented by backends that remember which registry an
+// installed package was fetched from.
+type OriginStore interface {
+	SetOrigin(pkg *Package, origin string) error
+	Origin(pkg *Package) (string, error) // "" and no error when unknown
+}
