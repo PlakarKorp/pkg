@@ -70,6 +70,10 @@ type Integration struct {
 	Stage         string                  `json:"stage"`
 	Installation  IntegrationInstallation `json:"installation"`
 	LatestVersion string                  `json:"latest_version"`
+
+	// Registry is the name of the additional registry the entry comes
+	// from, empty for the official catalog or a local-only package.
+	Registry string `json:"registry,omitempty"`
 }
 
 type IntegrationIndex struct {
@@ -85,4 +89,38 @@ func (int *Integration) HasConnectorType(ct string) bool {
 		}
 	}
 	return false
+}
+
+// normalize sets the fields derived from those of an index entry, for
+// compatibility with the former model, and the registry it comes from.
+func (in *Integration) normalize(registry string) {
+	in.Id = in.Name
+	in.LatestVersion = in.Version
+	in.Stage = stageOf(in.Version)
+	in.Types.Destination = in.HasConnectorType("exporter")
+	in.Types.Source = in.HasConnectorType("importer")
+	in.Types.Storage = in.HasConnectorType("storage")
+	in.Registry = registry
+}
+
+// merge completes the entry of an installed integration with the index
+// entry src.
+func (in *Integration) merge(src *Integration) {
+	in.Id = src.Id
+	in.DisplayName = src.DisplayName
+	in.Description = src.Description
+	in.Homepage = src.Homepage
+	in.Repository = src.Repository
+	in.License = src.License
+	in.Tags = src.Tags
+	in.LatestVersion = src.LatestVersion
+	in.Stage = src.Stage
+	in.Types = src.Types
+	in.Documentation = src.Documentation
+	in.Connectors = src.Connectors
+	in.Icon = src.Icon
+	in.Featured = src.Featured
+	in.Registry = src.Registry
+
+	in.Installation.Available = true
 }
