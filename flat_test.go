@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/PlakarKorp/kloset/kcontext"
@@ -329,5 +330,133 @@ func TestFlatBackendUnloadIdempotent(t *testing.T) {
 	}
 	if err := be.unload(ptarPath, filepath.Join(t.TempDir(), "does-not-exist")); err != nil {
 		t.Errorf("unload with missing extracted dir: %v", err)
+	}
+}
+
+// Manifest must return the manifest of an already-extracted package along
+// with the directory it lives in, without re-extracting the ptar.
+func TestFlatBackendManifest(t *testing.T) {
+	be, pkgdir, cachedir := newTestFlatBackend(t, nil)
+
+	pkg := testPkg("s3")
+	if err := os.WriteFile(filepath.Join(pkgdir, pkg.Filename()), []byte("artifact"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	extracted := filepath.Join(cachedir, strings.TrimSuffix(pkg.Filename(), ".ptar"))
+	if err := os.MkdirAll(extracted, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	manifest, err := yaml.Marshal(&Manifest{
+		Name:        "s3",
+		DisplayName: "S3",
+		Description: "S3 storage connector",
+		Connectors: []ManifestConnector{{
+			Type:       ConnectorTypeImporter,
+			Executable: "true",
+			Class:      ResourceClassObjectStorage,
+			SubClass:   ResourceSubClassS3,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(extracted, "manifest.yaml"), manifest, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	m, dir, err := be.Manifest(pkg)
+	if err != nil {
+		t.Fatalf("Manifest: %v", err)
+	}
+	if dir != extracted {
+		t.Errorf("dir = %q, want %q", dir, extracted)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "manifest.yaml")); err != nil {
+		t.Errorf("manifest.yaml missing from the returned directory: %v", err)
+	}
+	if m.Name != "s3" || m.DisplayName != "S3" || m.Description != "S3 storage connector" {
+		t.Errorf("Manifest = %+v", m)
+	}
+	if len(m.Connectors) != 1 || m.Connectors[0].SubClass != ResourceSubClassS3 {
+		t.Errorf("Connectors = %+v", m.Connectors)
+	}
+}
+
+// An unknown package has neither a ptar to extract nor a cached manifest, so
+// Manifest must report an error instead of panicking or returning zero values.
+func TestFlatBackendManifestUnknownPackage(t *testing.T) {
+	be, _, _ := newTestFlatBackend(t, nil)
+
+	if _, _, err := be.Manifest(testPkg("unknown")); err == nil {
+		t.Fatal("expected an error for an unknown package")
+	}
+}
+
+func TestFlatBackendOriginRoundTrip(t *testing.T) {
+	be, _, _ := newTestFlatBackend(t, nil)
+	pkg := testPkg("s3")
+
+	if origin, err := be.Origin(pkg); err != nil || origin != "" {
+		t.Fatalf("Origin before SetOrigin = %q, %v, want empty and no error", origin, err)
+	}
+
+	const url = "https://plakar.example.com/dist"
+	if err := be.SetOrigin(pkg, url); err != nil {
+		t.Fatalf("SetOrigin: %v", err)
+	}
+	if origin, err := be.Origin(pkg); err != nil || origin != url {
+		t.Errorf("Origin = %q, %v, want %q", origin, err, url)
+	}
+}
+
+// Like the signature, the origin must not outlive the package, or a later
+// install would upgrade from the wrong place.
+func TestFlatBackendUnloadRemovesOrigin(t *testing.T) {
+	be, pkgdir, _ := newTestFlatBackend(t, nil)
+
+	pkg := testPkg("s3")
+	touch(t, pkgdir, pkg.Filename())
+	if err := be.SetOrigin(pkg, "https://plakar.example.com/dist"); err != nil {
+		t.Fatal(err)
+	}
+
+	// the sidecar is not mistaken for a package.
+	var got []string
+	for p, err := range be.List("") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, p.Filename())
+	}
+	if len(got) != 1 || got[0] != pkg.Filename() {
+		t.Errorf("List = %v, want just %s", got, pkg.Filename())
+	}
+
+	if err := be.Unload(pkg); err != nil {
+		t.Fatalf("Unload: %v", err)
+	}
+	if origin, err := be.Origin(pkg); err != nil || origin != "" {
+		t.Errorf("Origin after Unload = %q, %v, want empty", origin, err)
+	}
+}
+
+// Loading a package drops any origin left for its filename, so an official
+// install never inherits a stale one.
+func TestFlatBackendLoadClearsStaleOrigin(t *testing.T) {
+	be, _, _ := newTestFlatBackend(t, nil)
+	pkg := testPkg("s3")
+
+	if err := be.SetOrigin(pkg, "https://plakar.example.com/dist"); err != nil {
+		t.Fatal(err)
+	}
+
+	// not a ptar: Load fails, after dropping the origin.
+	if err := be.Load(pkg, strings.NewReader("not a ptar"), nil); err == nil {
+		t.Fatal("Load of garbage succeeded")
+	}
+	if origin, err := be.Origin(pkg); err != nil || origin != "" {
+		t.Errorf("Origin after Load = %q, %v, want empty", origin, err)
 	}
 }
