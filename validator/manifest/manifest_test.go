@@ -47,3 +47,36 @@ func TestValidate(t *testing.T) {
 		}
 	}
 }
+
+func TestSchemas(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		connectors string
+		want       []string
+	}{
+		{
+			"one per connector",
+			`[{type: importer, executable: x, protocols: [x], validator: ./importer/schema.json},
+			  {type: exporter, executable: x, protocols: [x], validator: ./exporter/schema.json}]`,
+			[]string{"./importer/schema.json", "./exporter/schema.json"},
+		},
+		{
+			"drops duplicates, keeps connector order",
+			`[{type: importer, executable: x, protocols: [x], validator: b.json},
+			  {type: exporter, executable: x, protocols: [x], validator: a.json},
+			  {type: storage, executable: x, protocols: [x], validator: b.json}]`,
+			[]string{"b.json", "a.json"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			doc := "name: x\ndisplay_name: X\ndescription: x\nconnectors: " + tt.connectors + "\n"
+			m, err := ReadAndValidate(strings.NewReader(doc))
+			require.NoError(t, err)
+			require.Equal(t, tt.want, Schemas(m))
+		})
+	}
+}

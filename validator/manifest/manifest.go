@@ -35,6 +35,21 @@ func ReadAndValidate(r io.Reader) (*pkg.Manifest, error) {
 	return &m, nil
 }
 
+// Schemas returns a JSON schema path for each connector "validator" field.
+// If several connectors share a schema, later occurrences are skipped
+func Schemas(m *pkg.Manifest) []string {
+	// using a map for dedup, a list for ordering
+	seen := make(map[string]struct{})
+	var paths []string
+	for _, c := range m.Connectors {
+		if _, ok := seen[c.Validator]; !ok {
+			seen[c.Validator] = struct{}{}
+			paths = append(paths, c.Validator)
+		}
+	}
+	return paths
+}
+
 // validate validates a manifest against plakar's rules
 func validate(m *pkg.Manifest) error {
 	type field struct {
