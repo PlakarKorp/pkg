@@ -6,6 +6,7 @@ require (
 	github.com/PlakarKorp/integrations/fs v1.1.7
 	github.com/PlakarKorp/integrations/ptar v1.1.1
 	github.com/PlakarKorp/kloset v1.1.6
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/stretchr/testify v1.11.1
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/mod v0.41.0
@@ -39,6 +40,7 @@ require (
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
