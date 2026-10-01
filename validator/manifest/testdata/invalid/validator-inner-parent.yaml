@@ -1,0 +1,5 @@
+# error: validator "./importer/../../schema.json" escapes the integration directory
+name: test
+display_name: Test
+description: Test integration.
+connectors: [{type: importer, executable: x, protocols: [x], validator: ./importer/../../schema.json}]

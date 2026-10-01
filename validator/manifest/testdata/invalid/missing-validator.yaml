@@ -1,0 +1,7 @@
+# error: connector #1: validator is required
+name: test
+display_name: Test
+description: Test integration.
+connectors:
+  - {type: importer, executable: x, protocols: [x], validator: ./importer/schema.json}
+  - {type: exporter, executable: x, protocols: [x]}
