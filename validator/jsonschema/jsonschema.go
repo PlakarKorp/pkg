@@ -1,6 +1,7 @@
 package jsonschema
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
@@ -37,5 +38,28 @@ func validate(doc any) error {
 	if err != nil {
 		return fmt.Errorf("compile schema: %w", err)
 	}
-	return checkFlat(sch)
+	if err := checkFlat(sch); err != nil {
+		return err
+	}
+	return checkEnums(sch)
+}
+
+// ErrEnumNotString reports a root property whose enum holds a value that is
+// not a string.
+var ErrEnumNotString = errors.New("enum values must be strings")
+
+// checkEnums requires string enum values on the root's properties: plakman
+// builds its forms from them and rejects any other type.
+func checkEnums(root *js.Schema) error {
+	for _, p := range root.Properties {
+		if p.Enum == nil {
+			continue
+		}
+		for _, v := range p.Enum.Values {
+			if _, ok := v.(string); !ok {
+				return fmt.Errorf("%s: %v: %w", pointer(p), v, ErrEnumNotString)
+			}
+		}
+	}
+	return nil
 }
