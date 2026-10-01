@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"path"
 
 	_ "github.com/PlakarKorp/integrations/ptar/storage"
@@ -18,9 +19,21 @@ import (
 	"github.com/PlakarKorp/pkg/validator/manifest"
 )
 
+// Validator checks packaged integrations. The zero value is ready to use.
+type Validator struct {
+	// Logger receives progress logs. Nil discards them.
+	Logger *log.Logger
+}
+
+func (v *Validator) logf(format string, args ...any) {
+	if v.Logger != nil {
+		v.Logger.Printf(format, args...)
+	}
+}
+
 // ValidatePtar validates an integration's content (manifest, schema.json...) from a built ptar.
 // Kcontext with cache+logger is needed because we use kloset storage to read the ptar
-func ValidatePtar(kctx *kcontext.KContext, ptar string) error {
+func (v *Validator) ValidatePtar(kctx *kcontext.KContext, ptar string) error {
 	store, config, err := storage.Open(kctx, map[string]string{
 		"location": "ptar://" + ptar,
 	})
@@ -57,10 +70,10 @@ func ValidatePtar(kctx *kcontext.KContext, ptar string) error {
 		return fmt.Errorf("open snapshot filesystem: %w", err)
 	}
 
-	return runValidate(rootedFS{vfs, snap.Header.GetSource(0).Importer.Directory})
+	return v.runValidate(rootedFS{vfs, snap.Header.GetSource(0).Importer.Directory})
 }
 
-func runValidate(fsys fs.FS) error {
+func (v *Validator) runValidate(fsys fs.FS) error {
 	m, err := readAndValidateManifest(fsys)
 	if err != nil {
 		return fmt.Errorf("manifest.yaml: %w", err)
@@ -68,6 +81,7 @@ func runValidate(fsys fs.FS) error {
 
 	var errs []error
 	for _, p := range manifest.Schemas(m) {
+		v.logf("validating schema %s", p)
 		if err := validateSchema(fsys, p); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", p, err))
 		}
