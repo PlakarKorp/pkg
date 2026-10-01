@@ -23,6 +23,7 @@ func ReadAndValidate(r io.Reader) error {
 // validate checks a JSON Schema against the plakar rules.
 // It uses its meta-schema $schema or draft 2020-12 if absent.
 // External $ref are not allowed
+// The schema cannot contain nested objects
 func validate(doc any) error {
 	c := js.NewCompiler()
 	c.DefaultDraft(js.Draft2020)
@@ -32,8 +33,9 @@ func validate(doc any) error {
 	if err := c.AddResource(schemaURL, doc); err != nil {
 		return fmt.Errorf("add schema: %w", err)
 	}
-	if _, err := c.Compile(schemaURL); err != nil {
+	sch, err := c.Compile(schemaURL)
+	if err != nil {
 		return fmt.Errorf("compile schema: %w", err)
 	}
-	return nil
+	return checkFlat(sch)
 }
