@@ -6,6 +6,7 @@ require (
 	github.com/PlakarKorp/integrations/fs v1.1.7
 	github.com/PlakarKorp/integrations/ptar v1.1.1
 	github.com/PlakarKorp/kloset v1.1.6
+	github.com/stretchr/testify v1.11.1
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/mod v0.41.0
 )
@@ -13,6 +14,7 @@ require (
 require (
 	github.com/PlakarKorp/go-cdc-chunkers v1.1.0 // indirect
 	github.com/PlakarKorp/go-human2duration v0.1.6 // indirect
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.15 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
@@ -27,6 +29,7 @@ require (
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/nickball/go-aes-key-wrap v0.0.0-20170929221519-1c3aa3e4dfc5 // indirect
 	github.com/pierrec/lz4/v4 v4.1.29 // indirect
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/tink-crypto/tink-go/v2 v2.6.0 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
@@ -38,6 +41,7 @@ require (
 	golang.org/x/sys v0.48.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 	modernc.org/libc v1.75.7 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
