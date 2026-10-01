@@ -62,7 +62,10 @@ func validate(m *pkg.Manifest) error {
 		if len(c.Protocols) == 0 {
 			return fmt.Errorf("connector #%d: protocols is required", i)
 		}
-		if c.Validator != "" && !filepath.IsLocal(c.Validator) {
+		if c.Validator == "" {
+			return fmt.Errorf("connector #%d: validator is required", i)
+		}
+		if !filepath.IsLocal(c.Validator) {
 			return fmt.Errorf("connector #%d: validator %q escapes the integration directory", i, c.Validator)
 		}
 	}

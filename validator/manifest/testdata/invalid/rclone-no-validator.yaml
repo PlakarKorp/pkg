@@ -1,3 +1,4 @@
+# error: connector #0: validator is required
 name: rclone
 display_name: RClone
 description: A plugin for Rclone integration with various cloud storage services.

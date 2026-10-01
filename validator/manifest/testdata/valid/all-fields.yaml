@@ -14,5 +14,6 @@ connectors:
     protocols: [s3]
     location_flags: [localfs, file]
     executable: s3-storage
+    validator: ./storage/schema.json
     args: [--verbose]
     extra_files: [icon.png]
