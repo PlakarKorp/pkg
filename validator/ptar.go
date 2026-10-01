@@ -19,12 +19,9 @@ import (
 	"github.com/PlakarKorp/pkg/validator/manifest"
 )
 
-// Validator checks packaged integrations. The zero value is ready to use.
 type Validator struct {
-	// Logger receives progress logs. Nil discards them.
 	Logger *log.Logger
 }
-
 func (v *Validator) logf(format string, args ...any) {
 	if v.Logger != nil {
 		v.Logger.Printf(format, args...)
