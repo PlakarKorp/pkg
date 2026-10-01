@@ -123,3 +123,45 @@ func TestValidateFlatNamesTheField(t *testing.T) {
 	doc := `{"type": "object", "properties": {"opts": {"type": "object"}}}`
 	require.ErrorContains(t, ReadAndValidate(strings.NewReader(doc)), "#/properties/opts")
 }
+
+func TestValidateEnums(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		doc  string
+		want error
+	}{
+		{"string enum", `{"type": "object", "properties": {"m": {"type": "string", "enum": ["a", "b"]}}}`, nil},
+		{"integer enum", `{"type": "object", "properties": {"n": {"type": "integer", "enum": [1, 2]}}}`, ErrEnumNotString},
+		{"boolean enum", `{"type": "object", "properties": {"b": {"type": "boolean", "enum": [true]}}}`, ErrEnumNotString},
+		{"mixed enum", `{"type": "object", "properties": {"m": {"type": ["string", "null"], "enum": ["a", null]}}}`, ErrEnumNotString},
+		{"number enum", `{"type": "object", "properties": {"n": {"type": "number", "enum": [1.5]}}}`, ErrEnumNotString},
+		{"string enum among others", `{"type": "object", "properties": {
+			"a": {"type": "string", "enum": ["x"]}, "b": {"type": "integer", "enum": [2]}}}`, ErrEnumNotString},
+		{"no enum", `{"type": "object", "properties": {"n": {"type": "integer"}}}`, nil},
+		// Only root properties become form fields; constraints elsewhere are free.
+		{"enum in a combinator", `{"type": "object", "properties": {"n": {"type": "integer"}},
+			"if": {"properties": {"n": {"enum": [1]}}}, "then": {"required": ["n"]}}`, nil},
+		{"enum behind a ref", `{"type": "object", "properties": {"n": {"$ref": "#/$defs/n"}},
+			"$defs": {"n": {"type": "integer", "enum": [1]}}}`, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := ReadAndValidate(strings.NewReader(tt.doc))
+			if tt.want == nil {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateEnumNamesTheField(t *testing.T) {
+	t.Parallel()
+
+	doc := `{"type": "object", "properties": {"n": {"type": "integer", "enum": [1]}}}`
+	require.ErrorContains(t, ReadAndValidate(strings.NewReader(doc)), "#/properties/n: 1: enum values must be strings")
+}
