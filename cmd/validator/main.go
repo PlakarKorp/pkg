@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"log"
 	"os"
 
 	"github.com/PlakarKorp/kloset/caching"
@@ -21,23 +22,30 @@ func main() {
 }
 
 func newRootCmd() *cobra.Command {
-	return &cobra.Command{
+	var verbose bool
+	cmd := &cobra.Command{
 		Use:          "validator <package.ptar>",
 		Short:        "Check a packaged plakar integration",
 		Long:         "Check the manifest of a packaged plakar integration and every JSON Schema it references.",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := validatePtar(args[0]); err != nil {
+			v := &validator.Validator{}
+			if verbose {
+				v.Logger = log.New(cmd.OutOrStdout(), "", 0)
+			}
+			if err := validatePtar(v, args[0]); err != nil {
 				return fmt.Errorf("%s: %w", args[0], err)
 			}
 			_, err := fmt.Fprintf(cmd.OutOrStdout(), "%s: ok\n", args[0])
 			return err
 		},
 	}
+	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "log each file as it is checked")
+	return cmd
 }
 
-func validatePtar(ptar string) (err error) {
+func validatePtar(v *validator.Validator, ptar string) (err error) {
 	// Using the storage kloset connector to open a ptar, it needs a state file
 	cachedir, err := os.MkdirTemp("", "plakar-validator-")
 	if err != nil {
@@ -57,5 +65,5 @@ func validatePtar(ptar string) (err error) {
 	kctx.SetCache(cache)
 	kctx.CacheDir = cachedir
 
-	return validator.ValidatePtar(kctx, ptar)
+	return v.ValidatePtar(kctx, ptar)
 }

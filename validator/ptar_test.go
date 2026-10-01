@@ -1,7 +1,9 @@
 package validator
 
 import (
+	"bytes"
 	"io/fs"
+	"log"
 	"testing"
 	"testing/fstest"
 
@@ -87,7 +89,7 @@ func TestValidateFS(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			err := runValidate(tt.fsys)
+			err := new(Validator).runValidate(tt.fsys)
 			if tt.wantErr == nil {
 				require.NoError(t, err)
 				return
@@ -102,6 +104,22 @@ func TestValidateFS(t *testing.T) {
 func TestValidateFSMissingSchemaIsNotExist(t *testing.T) {
 	t.Parallel()
 
-	err := runValidate(fstest.MapFS{"manifest.yaml": manifestWith(importerA)})
+	err := new(Validator).runValidate(fstest.MapFS{"manifest.yaml": manifestWith(importerA)})
 	require.ErrorIs(t, err, fs.ErrNotExist)
+}
+
+func TestValidateLogsEachSchema(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	v := Validator{Logger: log.New(&out, "", 0)}
+
+	err := v.runValidate(fstest.MapFS{
+		"manifest.yaml": manifestWith(importerA + exporterB),
+		"a.json":        {Data: []byte(goodSchema)},
+		"sub/b.json":    {Data: []byte(badSchema)},
+	})
+	require.Error(t, err)
+	require.Contains(t, out.String(), "validating schema ./a.json\n")
+	require.Contains(t, out.String(), "validating schema sub/b.json\n")
 }
