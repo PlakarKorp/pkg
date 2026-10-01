@@ -8,3 +8,4 @@ connectors:
     protocols: [redis]
     image_id: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
     image: ghcr.io/plakarkorp/redis-importer:v1.0.0
+    validator: ./importer/schema.json
