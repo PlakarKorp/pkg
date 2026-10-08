@@ -15,6 +15,8 @@ const (
 	badSchema  = `{"type": "nope"}`
 )
 
+var readme = &fstest.MapFile{Data: []byte("# Test\n")}
+
 func manifestWith(connectors string) *fstest.MapFile {
 	return &fstest.MapFile{Data: []byte("name: test\ndisplay_name: Test\ndescription: Test.\nconnectors:\n" + connectors)}
 }
@@ -37,6 +39,7 @@ func TestValidateFS(t *testing.T) {
 		{
 			name: "valid",
 			fsys: fstest.MapFS{
+				"README.md":     readme,
 				"manifest.yaml": manifestWith(importerA + exporterB),
 				"a.json":        {Data: []byte(goodSchema)},
 				"sub/b.json":    {Data: []byte(goodSchema)},
@@ -44,15 +47,42 @@ func TestValidateFS(t *testing.T) {
 		},
 		{
 			name:    "connector without a schema",
-			fsys:    fstest.MapFS{"manifest.yaml": manifestWith(importerA + noSchema)},
+			fsys:    fstest.MapFS{"README.md": readme, "manifest.yaml": manifestWith(importerA + noSchema)},
 			wantErr: []string{"manifest.yaml", "connector #1: validator is required"},
 		},
 		{
 			name: "shared schema",
 			fsys: fstest.MapFS{
+				"README.md":     readme,
 				"manifest.yaml": manifestWith(importerA + exporterA),
 				"a.json":        {Data: []byte(goodSchema)},
 			},
+		},
+		{
+			name: "missing README",
+			fsys: fstest.MapFS{
+				"manifest.yaml": manifestWith(importerA),
+				"a.json":        {Data: []byte(goodSchema)},
+			},
+			wantErr: []string{"README.md", "file does not exist"},
+		},
+		{
+			name: "README is a directory",
+			fsys: fstest.MapFS{
+				"README.md/x":   {Data: []byte("x")},
+				"manifest.yaml": manifestWith(importerA),
+				"a.json":        {Data: []byte(goodSchema)},
+			},
+			wantErr: []string{"README.md", "not a regular file"},
+		},
+		{
+			name: "README not at the root",
+			fsys: fstest.MapFS{
+				"docs/README.md": readme,
+				"manifest.yaml":  manifestWith(importerA),
+				"a.json":         {Data: []byte(goodSchema)},
+			},
+			wantErr: []string{"README.md", "file does not exist"},
 		},
 		{
 			name:    "missing manifest",
@@ -66,12 +96,13 @@ func TestValidateFS(t *testing.T) {
 		},
 		{
 			name:    "missing schema",
-			fsys:    fstest.MapFS{"manifest.yaml": manifestWith(importerA)},
+			fsys:    fstest.MapFS{"README.md": readme, "manifest.yaml": manifestWith(importerA)},
 			wantErr: []string{"./a.json"},
 		},
 		{
 			name: "invalid schema",
 			fsys: fstest.MapFS{
+				"README.md":     readme,
 				"manifest.yaml": manifestWith(importerA),
 				"a.json":        {Data: []byte(badSchema)},
 			},
@@ -80,6 +111,7 @@ func TestValidateFS(t *testing.T) {
 		{
 			name: "reports every bad schema",
 			fsys: fstest.MapFS{
+				"README.md":     readme,
 				"manifest.yaml": manifestWith(importerA + exporterB),
 				"a.json":        {Data: []byte(badSchema)},
 			},
@@ -104,7 +136,7 @@ func TestValidateFS(t *testing.T) {
 func TestValidateFSMissingSchemaIsNotExist(t *testing.T) {
 	t.Parallel()
 
-	err := new(Validator).runValidate(fstest.MapFS{"manifest.yaml": manifestWith(importerA)})
+	err := new(Validator).runValidate(fstest.MapFS{"README.md": readme, "manifest.yaml": manifestWith(importerA)})
 	require.ErrorIs(t, err, fs.ErrNotExist)
 }
 
@@ -115,11 +147,13 @@ func TestValidateLogsEachSchema(t *testing.T) {
 	v := Validator{Logger: log.New(&out, "", 0)}
 
 	err := v.runValidate(fstest.MapFS{
+		"README.md":     readme,
 		"manifest.yaml": manifestWith(importerA + exporterB),
 		"a.json":        {Data: []byte(goodSchema)},
 		"sub/b.json":    {Data: []byte(badSchema)},
 	})
 	require.Error(t, err)
+	require.Contains(t, out.String(), "validating README.md\n")
 	require.Contains(t, out.String(), "validating schema ./a.json\n")
 	require.Contains(t, out.String(), "validating schema sub/b.json\n")
 }
