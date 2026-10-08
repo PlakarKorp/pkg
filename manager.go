@@ -68,15 +68,15 @@ type Manager struct {
 }
 
 type Options struct {
-	DistURL         string
-	Edition         string // community, devel, enterprise, ...
-	ApiURL          string
+	DistURL string
+	Edition string // community, devel, enterprise, ...
+	ApiURL  string
 
 	// IndexURL is where [Manager.Query] fetches the integrations
 	// index from, overriding the default location on the API
 	// server.  A mirror of the distribution tree serves it at its
 	// root, next to the edition directories.
-	IndexURL string
+	IndexURL        string
 	BinaryNeedsAuth bool
 	RequestHook     RequestHook
 
