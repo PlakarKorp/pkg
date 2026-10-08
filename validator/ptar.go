@@ -22,6 +22,7 @@ import (
 type Validator struct {
 	Logger *log.Logger
 }
+
 func (v *Validator) logf(format string, args ...any) {
 	if v.Logger != nil {
 		v.Logger.Printf(format, args...)
@@ -77,6 +78,10 @@ func (v *Validator) runValidate(fsys fs.FS) error {
 	}
 
 	var errs []error
+	v.logf("validating README.md")
+	if err := validateReadme(fsys); err != nil {
+		errs = append(errs, fmt.Errorf("README.md: %w", err))
+	}
 	for _, p := range manifest.Schemas(m) {
 		v.logf("validating schema %s", p)
 		if err := validateSchema(fsys, p); err != nil {
@@ -93,6 +98,17 @@ func readAndValidateManifest(fsys fs.FS) (*pkg.Manifest, error) {
 	}
 	defer func() { _ = f.Close() }()
 	return manifest.ReadAndValidate(f)
+}
+
+func validateReadme(fsys fs.FS) error {
+	fi, err := fs.Stat(fsys, "README.md")
+	if err != nil {
+		return err
+	}
+	if !fi.Mode().IsRegular() {
+		return errors.New("not a regular file")
+	}
+	return nil
 }
 
 func validateSchema(fsys fs.FS, p string) error {

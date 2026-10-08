@@ -26,7 +26,7 @@ func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "validator <package.ptar>",
 		Short:        "Check a packaged plakar integration",
-		Long:         "Check the manifest of a packaged plakar integration and every JSON Schema it references.",
+		Long:         "Check the README, the manifest of a packaged plakar integration and every JSON Schema it references.",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
