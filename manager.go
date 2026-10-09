@@ -555,6 +555,26 @@ func (p *Manager) Del(target string, opts *DelOptions) error {
 	return nil
 }
 
+// stageOf classifies a semver version's prerelease component into the
+// release stage shown by the UI: "stable" for a version with none, then
+// "devel", "beta" or "testing" for the well-known prerelease prefixes, and
+// the raw prerelease string itself (e.g. "-alpha.1") for anything else.
+func stageOf(version string) string {
+	pr := semver.Prerelease(version)
+	switch {
+	case pr == "":
+		return "stable"
+	case strings.HasPrefix(pr, "-devel."):
+		return "devel"
+	case strings.HasPrefix(pr, "-beta."):
+		return "beta"
+	case strings.HasPrefix(pr, "-rc."):
+		return "testing"
+	default:
+		return pr
+	}
+}
+
 type QueryOptions struct {
 	Type    string
 	Tag     string
@@ -578,7 +598,7 @@ func (p *Manager) Query(opts *QueryOptions) (ret []*Integration, err error) {
 	}
 
 	packages := make(map[string]*Integration)
-	for p, err := range p.List() {
+	for pkg, err := range p.List() {
 		if err != nil {
 			return nil, err
 		}
@@ -586,17 +606,32 @@ func (p *Manager) Query(opts *QueryOptions) (ret []*Integration, err error) {
 		// we don't have all the information locally, so fill
 		// what we have and integrate the rest after we've hit
 		// the api.
-		packages[p.Name] = &Integration{
-			Id:          p.Name,
-			Name:        p.Name,
-			DisplayName: p.Name,
-			Tags:        []string{},
-			API:         PLUGIN_API_VERSION,
+		in := &Integration{
+			Id:            pkg.Name,
+			Name:          pkg.Name,
+			DisplayName:   pkg.Name,
+			Tags:          []string{},
+			API:           PLUGIN_API_VERSION,
+			LatestVersion: pkg.Version,
+			Stage:         stageOf(pkg.Version),
 			Installation: IntegrationInstallation{
 				Status:  "installed",
-				Version: p.Version,
+				Version: pkg.Version,
 			},
 		}
+
+		// Fall back to the package's own manifest so an installed
+		// integration missing from the remote catalog still gets a
+		// complete card. A manifest that can't be read or parsed
+		// must not fail Query, it only leaves the fallback fields
+		// unset.
+		if mr, ok := p.store.(ManifestReader); ok {
+			if m, dir, err := mr.Manifest(pkg); err == nil {
+				integrationFromManifest(in, m, dir)
+			}
+		}
+
+		packages[pkg.Name] = in
 	}
 
 	if !opts.OnlyLocal {
@@ -634,19 +669,7 @@ func (p *Manager) Query(opts *QueryOptions) (ret []*Integration, err error) {
 			// Set compatibility fields for the former model
 			plug.Id = plug.Name
 			plug.LatestVersion = plug.Version
-			pr := semver.Prerelease(plug.Version)
-			switch {
-			case pr == "":
-				plug.Stage = "stable"
-			case strings.HasPrefix(pr, "-devel."):
-				plug.Stage = "devel"
-			case strings.HasPrefix(pr, "-beta."):
-				plug.Stage = "beta"
-			case strings.HasPrefix(pr, "-rc."):
-				plug.Stage = "testing"
-			default:
-				plug.Stage = pr
-			}
+			plug.Stage = stageOf(plug.Version)
 			plug.Types.Destination = plug.HasConnectorType("exporter")
 			plug.Types.Source = plug.HasConnectorType("importer")
 			plug.Types.Storage = plug.HasConnectorType("storage")
@@ -663,6 +686,7 @@ func (p *Manager) Query(opts *QueryOptions) (ret []*Integration, err error) {
 				p.Stage = plug.Stage
 				p.Types = plug.Types
 				p.Documentation = plug.Documentation
+				p.Connectors = plug.Connectors
 				p.Icon = plug.Icon
 				p.Featured = plug.Featured
 
