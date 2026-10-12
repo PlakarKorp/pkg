@@ -121,7 +121,7 @@ func TestManifestNoConnectors(t *testing.T) {
 }
 
 func TestManifestFields(t *testing.T) {
-	const connectors = "connectors: [{type: importer, executable: tool}]\n"
+	const connectors = "connectors: [{type: importer, executable: tool, protocols: [foo]}]\n"
 	tests := []struct {
 		name    string
 		fields  string
@@ -197,6 +197,7 @@ func TestManifestValidation(t *testing.T) {
 connectors:
   - type: importer
     executable: true
+    protocols: [foo]
     class: %s
     subclass: %s`, test.class, test.subclass))
 
@@ -239,6 +240,7 @@ name: tool
 connectors:
   - type: storage
     executable: tool.exe
+    protocols: [tool]
 `
 	var m2 Manifest
 	if err := m2.Parse(strings.NewReader(withExe)); err != nil {
@@ -293,19 +295,19 @@ func TestManifestWindowsExeSuffixSkipsImageConnectors(t *testing.T) {
 func TestManifestConnectorValidate(t *testing.T) {
 	valid := func(c ManifestConnector) error { return c.Validate() }
 
-	if err := valid(ManifestConnector{Type: "importer", Executable: "tool"}); err != nil {
+	if err := valid(ManifestConnector{Type: "importer", Protocols: []string{"foo"}, Executable: "tool"}); err != nil {
 		t.Errorf("native connector: %v", err)
 	}
-	if err := valid(ManifestConnector{Type: "importer", ImageID: "sha256:aa"}); err != nil {
+	if err := valid(ManifestConnector{Type: "importer", Protocols: []string{"foo"}, ImageID: "sha256:aa"}); err != nil {
 		t.Errorf("image connector: %v", err)
 	}
-	if err := valid(ManifestConnector{Type: "importer", ImageID: "sha256:aa", Image: "reg/img:1"}); err != nil {
+	if err := valid(ManifestConnector{Type: "importer", Protocols: []string{"foo"}, ImageID: "sha256:aa", Image: "reg/img:1"}); err != nil {
 		t.Errorf("image connector with registry ref: %v", err)
 	}
-	if err := valid(ManifestConnector{Type: "importer", ImageID: "sha256:aa", ExtraFiles: []string{"icon.png"}}); err != nil {
+	if err := valid(ManifestConnector{Type: "importer", Protocols: []string{"foo"}, ImageID: "sha256:aa", ExtraFiles: []string{"icon.png"}}); err != nil {
 		t.Errorf("extra_files on an image connector: %v", err)
 	}
-	if err := valid(ManifestConnector{Type: "importer", Executable: "tool", LocationFlags: []string{"localfs"}}); err != nil {
+	if err := valid(ManifestConnector{Type: "importer", Protocols: []string{"foo"}, Executable: "tool", LocationFlags: []string{"localfs"}}); err != nil {
 		t.Errorf("localfs native connector: %v", err)
 	}
 
@@ -327,6 +329,41 @@ func TestManifestConnectorValidate(t *testing.T) {
 
 	if err := valid(ManifestConnector{Executable: "tool"}); err == nil {
 		t.Error("a manifest without a type is invalid")
+	}
+}
+
+func TestManifestConnectorProtocols(t *testing.T) {
+	tests := []struct {
+		name      string
+		protocols []string
+		wantErr   string
+	}{
+		{"single", []string{"s3"}, ""},
+		{"several", []string{"dav", "davs"}, ""},
+		{"scheme punctuation", []string{"k8s+csi", "mysql.proxy"}, ""},
+		{"none", nil, "protocols is required"},
+		{"empty", []string{""}, `protocol "" is not a valid scheme`},
+		{"one char", []string{"x"}, `protocol "x" is not a valid scheme`},
+		{"url", []string{"s3://"}, `protocol "s3://" is not a valid scheme`},
+		{"space", []string{"s 3"}, `protocol "s 3" is not a valid scheme`},
+		{"leading hyphen", []string{"-s3"}, `protocol "-s3" is not a valid scheme`},
+		{"inner hyphen", []string{"aws-sm"}, ""},
+		{"duplicate", []string{"s3", "gcs", "s3"}, `protocol "s3" listed twice`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := ManifestConnector{Type: "importer", Executable: "tool", Protocols: tt.protocols}
+			err := c.Validate()
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("Validate error = %v, want %q", err, tt.wantErr)
+			}
+		})
 	}
 }
 

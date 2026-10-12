@@ -24,6 +24,7 @@ import (
 	"net/mail"
 	"net/url"
 	"os"
+	"regexp"
 	"runtime"
 	"strings"
 	"unicode"
@@ -31,6 +32,8 @@ import (
 	"github.com/PlakarKorp/kloset/location"
 	"go.yaml.in/yaml/v3"
 )
+
+var protocolRe = regexp.MustCompile(`^[A-Za-z0-9+.][A-Za-z0-9+.-]+$`)
 
 type ManifestConnector struct {
 	Type          ConnectorType    `yaml:"type"`
@@ -218,6 +221,20 @@ func (conn *ManifestConnector) Validate() error {
 		if flags&location.FLAG_LOCALFS != 0 {
 			return fmt.Errorf("localfs connectors cannot run as containers")
 		}
+	}
+
+	if len(conn.Protocols) == 0 {
+		return fmt.Errorf("protocols is required")
+	}
+	seen := make(map[string]bool)
+	for _, p := range conn.Protocols {
+		if !protocolRe.MatchString(p) {
+			return fmt.Errorf("protocol %q is not a valid scheme", p)
+		}
+		if seen[p] {
+			return fmt.Errorf("protocol %q listed twice", p)
+		}
+		seen[p] = true
 	}
 
 	return nil
