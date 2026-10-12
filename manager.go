@@ -283,7 +283,7 @@ func (p *Manager) Add(target string, opts *AddOptions) error {
 			name, version = r.Name, r.Semver()
 		}
 
-		if !semver.IsValid(version) {
+		if !validVersion(version) {
 			return fmt.Errorf("%w: invalid version %q", ErrBadPackageName, version)
 		}
 
