@@ -132,12 +132,39 @@ func TestNewManagerCustomUserAgent(t *testing.T) {
 	}
 }
 
-func TestNewManagerInvalidURLs(t *testing.T) {
-	if _, err := New(newFakeBackend(), &Options{DistURL: "://bad"}); err == nil {
-		t.Error("expected error for bad DistURL")
+func TestNewManagerURLs(t *testing.T) {
+	tests := []struct {
+		url     string
+		wantErr bool
+	}{
+		{"https://plakar.io/dist", false},
+		{"http://127.0.0.1:8080", false},
+		{"://bad", true},
+		{"plakar.io/dist", true},
+		{"ftp://plakar.io/dist", true},
+		{"file:///srv/dist", true},
+		{"https:///dist", true},
 	}
-	if _, err := New(newFakeBackend(), &Options{ApiURL: "://bad"}); err == nil {
-		t.Error("expected error for bad ApiURL")
+	options := map[string]func(string) *Options{
+		"DistURL":  func(u string) *Options { return &Options{DistURL: u} },
+		"ApiURL":   func(u string) *Options { return &Options{ApiURL: u} },
+		"IndexURL": func(u string) *Options { return &Options{IndexURL: u} },
+	}
+	for option, opts := range options {
+		for _, tt := range tests {
+			t.Run(option+"/"+tt.url, func(t *testing.T) {
+				_, err := New(newFakeBackend(), opts(tt.url))
+				if !tt.wantErr {
+					if err != nil {
+						t.Fatalf("New: %v", err)
+					}
+					return
+				}
+				if !errors.Is(err, ErrInvalidOptions) {
+					t.Errorf("New error = %v, want ErrInvalidOptions", err)
+				}
+			})
+		}
 	}
 }
 

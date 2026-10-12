@@ -123,7 +123,7 @@ func New(store Backend, opts *Options) (*Manager, error) {
 	}
 
 	if opts.DistURL != "" {
-		u, err := url.Parse(opts.DistURL)
+		u, err := parseHTTPURL("DistURL", opts.DistURL)
 		if err != nil {
 			return nil, err
 		}
@@ -138,7 +138,7 @@ func New(store Backend, opts *Options) (*Manager, error) {
 	}
 
 	if opts.ApiURL != "" {
-		u, err := url.Parse(opts.ApiURL)
+		u, err := parseHTTPURL("ApiURL", opts.ApiURL)
 		if err != nil {
 			return nil, err
 		}
@@ -146,7 +146,7 @@ func New(store Backend, opts *Options) (*Manager, error) {
 	}
 
 	if opts.IndexURL != "" {
-		u, err := url.Parse(opts.IndexURL)
+		u, err := parseHTTPURL("IndexURL", opts.IndexURL)
 		if err != nil {
 			return nil, err
 		}
@@ -158,6 +158,19 @@ func New(store Backend, opts *Options) (*Manager, error) {
 	}
 	m.useragent += fmt.Sprintf(" (%s/%s)", runtime.GOOS, runtime.GOARCH)
 	return m, nil
+}
+
+// parseHTTPURL parses an option pointing at a server that fetch will reach
+// with an HTTP client.
+func parseHTTPURL(option, s string) (*url.URL, error) {
+	u, err := url.Parse(s)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s: %w", ErrInvalidOptions, option, err)
+	}
+	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return nil, fmt.Errorf("%w: %s %q is not an http(s) URL", ErrInvalidOptions, option, s)
+	}
+	return u, nil
 }
 
 // List lists all the installed packages.
