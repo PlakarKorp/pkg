@@ -37,6 +37,10 @@ import (
 	"github.com/PlakarKorp/kloset/snapshot"
 )
 
+var (
+	ErrManifestMismatch = errors.New("manifest does not match the package")
+)
+
 // A backend that stores integrations in a single, flat, directory.
 type FlatBackend struct {
 	kcontext *kcontext.KContext
@@ -218,10 +222,14 @@ func (f *FlatBackend) extract(destDir, ptar string) error {
 	return nil
 }
 
-func (f *FlatBackend) loadmanifest(mpath string) (*Manifest, error) {
+func (f *FlatBackend) loadmanifest(mpath string, pkg *Package) (*Manifest, error) {
 	m, err := NewManifestFromFile(mpath)
 	if err != nil {
 		return nil, err
+	}
+
+	if m.Name != pkg.Name {
+		return nil, fmt.Errorf("%w: manifest %q, package %q", ErrManifestMismatch, m.Name, pkg.Name)
 	}
 
 	for _, conn := range m.Connectors {
@@ -254,7 +262,7 @@ func (f *FlatBackend) Load(pkg *Package, rd io.Reader, sig []byte) error {
 		return err
 	}
 
-	m, err := f.loadmanifest(filepath.Join(extracted, "manifest.yaml"))
+	m, err := f.loadmanifest(filepath.Join(extracted, "manifest.yaml"), pkg)
 	if err != nil {
 		f.unload(fp.Name(), extracted)
 		return err
@@ -331,7 +339,7 @@ func (f *FlatBackend) reload(pkg *Package) error {
 		}
 	}
 
-	m, err := f.loadmanifest(filepath.Join(extracted, "manifest.yaml"))
+	m, err := f.loadmanifest(filepath.Join(extracted, "manifest.yaml"), pkg)
 	if err != nil {
 		f.unload(ptar, extracted)
 		return err
