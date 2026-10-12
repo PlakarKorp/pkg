@@ -51,6 +51,7 @@ var (
 	ErrNoDistURL             = errors.New("no DistURL provided")
 	ErrNoApiURL              = errors.New("no ApiURL provided")
 	ErrBadEdition            = errors.New("bad edition")
+	ErrRecipeMismatch        = errors.New("recipe does not match the requested package")
 
 	editionre = regexp.MustCompile(`^[-_a-zA-Z0-9]+$`)
 )
@@ -427,6 +428,9 @@ func (p *Manager) FetchRecipe(name string, opts *FetchOptions) (*Recipe, error) 
 	var recipe Recipe
 	if err := recipe.Parse(rd); err != nil {
 		return nil, err
+	}
+	if recipe.Name != name {
+		return nil, fmt.Errorf("%w: asked for %q, got %q", ErrRecipeMismatch, name, recipe.Name)
 	}
 
 	return &recipe, nil
