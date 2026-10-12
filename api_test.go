@@ -3,6 +3,8 @@ package pkg
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestIntegrationHasConnectorType(t *testing.T) {
@@ -12,22 +14,14 @@ func TestIntegrationHasConnectorType(t *testing.T) {
 			{Type: "storage"},
 		},
 	}
-	if !i.HasConnectorType("importer") {
-		t.Error("HasConnectorType(importer) = false, want true")
-	}
-	if !i.HasConnectorType("storage") {
-		t.Error("HasConnectorType(storage) = false, want true")
-	}
-	if i.HasConnectorType("exporter") {
-		t.Error("HasConnectorType(exporter) = true, want false")
-	}
+	require.True(t, i.HasConnectorType("importer"))
+	require.True(t, i.HasConnectorType("storage"))
+	require.False(t, i.HasConnectorType("exporter"))
 }
 
 func TestIntegrationHasConnectorTypeEmpty(t *testing.T) {
 	var i Integration
-	if i.HasConnectorType("importer") {
-		t.Error("HasConnectorType on empty integration = true, want false")
-	}
+	require.False(t, i.HasConnectorType("importer"))
 }
 
 // The index JSON is the wire format the manager decodes in Query; make
@@ -50,23 +44,14 @@ func TestIntegrationIndexJSONDecode(t *testing.T) {
 	}`
 
 	var idx IntegrationIndex
-	if err := json.Unmarshal([]byte(doc), &idx); err != nil {
-		t.Fatalf("Unmarshal: %v", err)
-	}
-	if idx.Version != "v1.0.0" {
-		t.Errorf("Version = %q", idx.Version)
-	}
-	if len(idx.Integrations) != 1 {
-		t.Fatalf("len(Integrations) = %d, want 1", len(idx.Integrations))
-	}
+	require.NoError(t, json.Unmarshal([]byte(doc), &idx))
+	require.Equal(t, "v1.0.0", idx.Version)
+	require.Len(t, idx.Integrations, 1)
+
 	in := idx.Integrations[0]
-	if in.Name != "s3" || in.DisplayName != "Amazon S3" {
-		t.Errorf("decoded integration = %+v", in)
-	}
-	if in.API != "v1.1.0" || in.Version != "v1.2.3" {
-		t.Errorf("api/version = %q/%q", in.API, in.Version)
-	}
-	if !in.HasConnectorType("storage") {
-		t.Error("expected storage connector")
-	}
+	require.Equal(t, "s3", in.Name)
+	require.Equal(t, "Amazon S3", in.DisplayName)
+	require.Equal(t, "v1.1.0", in.API)
+	require.Equal(t, "v1.2.3", in.Version)
+	require.True(t, in.HasConnectorType("storage"))
 }

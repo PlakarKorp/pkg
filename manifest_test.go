@@ -8,7 +8,19 @@ import (
 	"testing"
 
 	"github.com/PlakarKorp/kloset/location"
+	"github.com/stretchr/testify/require"
 )
+
+// requireErr requires err to be nil when want is empty, and to contain want
+// otherwise.
+func requireErr(t *testing.T, err error, want string) {
+	t.Helper()
+	if want == "" {
+		require.NoError(t, err)
+		return
+	}
+	require.ErrorContains(t, err, want)
+}
 
 const sampleManifest = `
 name: s3
@@ -40,84 +52,44 @@ connectors:
 
 func TestManifestParse(t *testing.T) {
 	var m Manifest
-	if err := m.Parse(strings.NewReader(sampleManifest)); err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
-
-	if m.Name != "s3" {
-		t.Errorf("Name = %q, want s3", m.Name)
-	}
-	if m.DisplayName != "Amazon S3" {
-		t.Errorf("DisplayName = %q", m.DisplayName)
-	}
-	if m.APIVersion != "v1.1.0" {
-		t.Errorf("APIVersion = %q, want v1.1.0", m.APIVersion)
-	}
-	if len(m.Tags) != 2 || m.Tags[0] != "cloud" || m.Tags[1] != "aws" {
-		t.Errorf("Tags = %v", m.Tags)
-	}
-	if len(m.Connectors) != 1 {
-		t.Fatalf("len(Connectors) = %d, want 1", len(m.Connectors))
-	}
+	require.NoError(t, m.Parse(strings.NewReader(sampleManifest)))
+	require.Equal(t, "s3", m.Name)
+	require.Equal(t, "Amazon S3", m.DisplayName)
+	require.Equal(t, "v1.1.0", m.APIVersion)
+	require.Equal(t, []string{"cloud", "aws"}, m.Tags)
+	require.Len(t, m.Connectors, 1)
 
 	c := m.Connectors[0]
-	if c.Type != ConnectorTypeStorage {
-		t.Errorf("connector Type = %q, want storage", c.Type)
-	}
-	if c.Class != ResourceClassObjectStorage {
-		t.Errorf("connector Class = %q, want object-storage", c.Class)
-	}
-	if c.SubClass != ResourceSubClassS3 {
-		t.Errorf("connector SubClass = %q, want s3", c.SubClass)
-	}
-	if strings.TrimSuffix(c.Executable, ".exe") != "s3-storage" {
-		t.Errorf("Executable = %q", c.Executable)
-	}
-	if len(c.Args) != 1 || c.Args[0] != "--verbose" {
-		t.Errorf("Args = %v", c.Args)
-	}
+	require.Equal(t, ConnectorTypeStorage, c.Type)
+	require.Equal(t, ResourceClassObjectStorage, c.Class)
+	require.Equal(t, ResourceSubClassS3, c.SubClass)
+	require.Equal(t, "s3-storage", strings.TrimSuffix(c.Executable, ".exe"))
+	require.Equal(t, []string{"--verbose"}, c.Args)
 }
 
 func TestManifestParseInvalidYAML(t *testing.T) {
 	var m Manifest
-	err := m.Parse(strings.NewReader("connectors: [oops"))
-	if err == nil {
-		t.Fatal("expected error for invalid yaml")
-	}
-	if !strings.Contains(err.Error(), "failed to decode the manifest") {
-		t.Errorf("error = %v, want wrapped decode error", err)
-	}
+	require.ErrorContains(t, m.Parse(strings.NewReader("connectors: [oops")), "failed to decode the manifest")
 }
 
 func TestNewManifestFromFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "manifest.yaml")
-	if err := os.WriteFile(path, []byte(sampleManifest), 0644); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, os.WriteFile(path, []byte(sampleManifest), 0644))
 
 	m, err := NewManifestFromFile(path)
-	if err != nil {
-		t.Fatalf("NewManifestFromFile: %v", err)
-	}
-	if m.Name != "s3" {
-		t.Errorf("Name = %q, want s3", m.Name)
-	}
+	require.NoError(t, err)
+	require.Equal(t, "s3", m.Name)
 }
 
 func TestNewManifestFromFileMissing(t *testing.T) {
-	if _, err := NewManifestFromFile(filepath.Join(t.TempDir(), "nope.yaml")); err == nil {
-		t.Fatal("expected error for missing file")
-	}
+	_, err := NewManifestFromFile(filepath.Join(t.TempDir(), "nope.yaml"))
+	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
 func TestManifestNoConnectors(t *testing.T) {
-	rd := strings.NewReader(`name: s3`)
 	var m Manifest
-
-	if err := m.Parse(rd); err == nil {
-		t.Errorf("expected to fail when parsing a manifest without a connector")
-	}
+	require.ErrorContains(t, m.Parse(strings.NewReader(`name: s3`)), "no connectors defined")
 }
 
 func TestManifestFields(t *testing.T) {
@@ -168,15 +140,7 @@ func TestManifestFields(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var m Manifest
 			err := m.Parse(strings.NewReader(tt.fields + connectors))
-			if tt.wantErr == "" {
-				if err != nil {
-					t.Fatalf("Parse: %v", err)
-				}
-				return
-			}
-			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-				t.Errorf("Parse error = %v, want %q", err, tt.wantErr)
-			}
+			requireErr(t, err, tt.wantErr)
 		})
 	}
 }
@@ -207,11 +171,10 @@ connectors:
 
 		var m Manifest
 		err := m.Parse(rd)
-		if test.ok && err != nil {
-			t.Errorf("%s/%s: unexpected failure: %v",
-				test.class, test.subclass, err)
-		} else if !test.ok && err == nil {
-			t.Errorf("%s/%s: expected failure", test.class, test.subclass)
+		if test.ok {
+			require.NoError(t, err, "%s/%s", test.class, test.subclass)
+		} else {
+			require.Error(t, err, "%s/%s", test.class, test.subclass)
 		}
 	}
 
@@ -220,9 +183,7 @@ connectors:
 	err := m.Parse(strings.NewReader(`name: foo
 connectors:
   - type: myamazingconnector`))
-	if err == nil {
-		t.Errorf("expected failure with bad connector name")
-	}
+	require.Error(t, err)
 }
 
 func TestManifestWindowsExeSuffix(t *testing.T) {
@@ -231,12 +192,8 @@ func TestManifestWindowsExeSuffix(t *testing.T) {
 	t.Setenv("GOOS", "windows")
 
 	var m Manifest
-	if err := m.Parse(strings.NewReader(sampleManifest)); err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
-	if got := m.Connectors[0].Executable; got != "s3-storage.exe" {
-		t.Errorf("Executable = %q, want s3-storage.exe", got)
-	}
+	require.NoError(t, m.Parse(strings.NewReader(sampleManifest)))
+	require.Equal(t, "s3-storage.exe", m.Connectors[0].Executable)
 
 	// Idempotent: an executable that already ends in .exe is untouched.
 	const withExe = `
@@ -247,12 +204,8 @@ connectors:
     protocols: [tool]
 `
 	var m2 Manifest
-	if err := m2.Parse(strings.NewReader(withExe)); err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
-	if got := m2.Connectors[0].Executable; got != "tool.exe" {
-		t.Errorf("Executable = %q, want tool.exe (no double suffix)", got)
-	}
+	require.NoError(t, m2.Parse(strings.NewReader(withExe)))
+	require.Equal(t, "tool.exe", m2.Connectors[0].Executable, "no double suffix")
 }
 
 const dockerManifest = `
@@ -268,73 +221,52 @@ connectors:
 
 func TestManifestParseImage(t *testing.T) {
 	var m Manifest
-	if err := m.Parse(strings.NewReader(dockerManifest)); err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
+	require.NoError(t, m.Parse(strings.NewReader(dockerManifest)))
 
 	c := m.Connectors[0]
-	if !strings.HasPrefix(c.ImageID, "sha256:") {
-		t.Errorf("ImageID = %q", c.ImageID)
-	}
-	if c.Image != "registry.plakar.io/plugin-postgres:1.0.0" {
-		t.Errorf("Image = %q", c.Image)
-	}
-	if err := c.Validate(); err != nil {
-		t.Errorf("Validate: %v", err)
-	}
+	require.Equal(t, "sha256:1111111111111111111111111111111111111111111111111111111111111111", c.ImageID)
+	require.Equal(t, "registry.plakar.io/plugin-postgres:1.0.0", c.Image)
+	require.NoError(t, c.Validate())
 }
 
 func TestManifestWindowsExeSuffixSkipsImageConnectors(t *testing.T) {
 	t.Setenv("GOOS", "windows")
 
 	var m Manifest
-	if err := m.Parse(strings.NewReader(dockerManifest)); err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
-	if got := m.Connectors[0].Executable; got != "" {
-		t.Errorf("Executable = %q, want empty (no .exe suffix on image connectors)", got)
-	}
+	require.NoError(t, m.Parse(strings.NewReader(dockerManifest)))
+	require.Empty(t, m.Connectors[0].Executable, "no .exe suffix on image connectors")
 }
 
 const testImageID = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
 
 func TestManifestConnectorValidate(t *testing.T) {
-	valid := func(c ManifestConnector) error { return c.Validate() }
-
-	if err := valid(ManifestConnector{Type: "importer", Protocols: []string{"foo"}, Executable: "tool"}); err != nil {
-		t.Errorf("native connector: %v", err)
+	valid := []struct {
+		name string
+		conn ManifestConnector
+	}{
+		{"native connector", ManifestConnector{Type: "importer", Protocols: []string{"foo"}, Executable: "tool"}},
+		{"image connector", ManifestConnector{Type: "importer", Protocols: []string{"foo"}, ImageID: testImageID}},
+		{"image connector with registry ref", ManifestConnector{Type: "importer", Protocols: []string{"foo"}, ImageID: testImageID, Image: "reg/img:1"}},
+		{"extra_files on an image connector", ManifestConnector{Type: "importer", Protocols: []string{"foo"}, ImageID: testImageID, ExtraFiles: []string{"icon.png"}}},
+		{"localfs native connector", ManifestConnector{Type: "importer", Protocols: []string{"foo"}, Executable: "tool", LocationFlags: []string{"localfs"}}},
 	}
-	if err := valid(ManifestConnector{Type: "importer", Protocols: []string{"foo"}, ImageID: testImageID}); err != nil {
-		t.Errorf("image connector: %v", err)
-	}
-	if err := valid(ManifestConnector{Type: "importer", Protocols: []string{"foo"}, ImageID: testImageID, Image: "reg/img:1"}); err != nil {
-		t.Errorf("image connector with registry ref: %v", err)
-	}
-	if err := valid(ManifestConnector{Type: "importer", Protocols: []string{"foo"}, ImageID: testImageID, ExtraFiles: []string{"icon.png"}}); err != nil {
-		t.Errorf("extra_files on an image connector: %v", err)
-	}
-	if err := valid(ManifestConnector{Type: "importer", Protocols: []string{"foo"}, Executable: "tool", LocationFlags: []string{"localfs"}}); err != nil {
-		t.Errorf("localfs native connector: %v", err)
+	for _, tt := range valid {
+		require.NoError(t, tt.conn.Validate(), tt.name)
 	}
 
-	if err := valid(ManifestConnector{Type: "importer"}); err == nil {
-		t.Error("connector with neither executable nor image_id should fail")
+	invalid := []struct {
+		name string
+		conn ManifestConnector
+	}{
+		{"neither executable nor image_id", ManifestConnector{Type: "importer"}},
+		{"both executable and image_id", ManifestConnector{Type: "importer", Executable: "tool", ImageID: testImageID}},
+		{"image without image_id", ManifestConnector{Type: "importer", Executable: "tool", Image: "reg/img:1"}},
+		{"localfs image connector", ManifestConnector{Type: "importer", ImageID: testImageID, LocationFlags: []string{"localfs"}}},
+		{"unknown location flag", ManifestConnector{Type: "importer", Executable: "tool", LocationFlags: []string{"bogus"}}},
+		{"no type", ManifestConnector{Executable: "tool"}},
 	}
-	if err := valid(ManifestConnector{Type: "importer", Executable: "tool", ImageID: testImageID}); err == nil {
-		t.Error("connector with both executable and image_id should fail")
-	}
-	if err := valid(ManifestConnector{Type: "importer", Executable: "tool", Image: "reg/img:1"}); err == nil {
-		t.Error("image without image_id should fail")
-	}
-	if err := valid(ManifestConnector{Type: "importer", ImageID: testImageID, LocationFlags: []string{"localfs"}}); err == nil {
-		t.Error("localfs image connector should fail")
-	}
-	if err := valid(ManifestConnector{Type: "importer", Executable: "tool", LocationFlags: []string{"bogus"}}); err == nil {
-		t.Error("unknown location flag should fail")
-	}
-
-	if err := valid(ManifestConnector{Executable: "tool"}); err == nil {
-		t.Error("a manifest without a type is invalid")
+	for _, tt := range invalid {
+		require.Error(t, tt.conn.Validate(), tt.name)
 	}
 }
 
@@ -360,15 +292,7 @@ func TestManifestConnectorProtocols(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := ManifestConnector{Type: "importer", Executable: "tool", Protocols: tt.protocols}
 			err := c.Validate()
-			if tt.wantErr == "" {
-				if err != nil {
-					t.Fatalf("Validate: %v", err)
-				}
-				return
-			}
-			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-				t.Errorf("Validate error = %v, want %q", err, tt.wantErr)
-			}
+			requireErr(t, err, tt.wantErr)
 		})
 	}
 }
@@ -392,15 +316,7 @@ func TestManifestConnectorExecutable(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := ManifestConnector{Type: "importer", Executable: tt.executable, Protocols: []string{"s3"}}
 			err := c.Validate()
-			if tt.wantErr == "" {
-				if err != nil {
-					t.Fatalf("Validate: %v", err)
-				}
-				return
-			}
-			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-				t.Errorf("Validate error = %v, want %q", err, tt.wantErr)
-			}
+			requireErr(t, err, tt.wantErr)
 		})
 	}
 }
@@ -424,15 +340,7 @@ func TestManifestConnectorExtraFiles(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := ManifestConnector{Type: "importer", Executable: "tool", Protocols: []string{"s3"}, ExtraFiles: tt.files}
 			err := c.Validate()
-			if tt.wantErr == "" {
-				if err != nil {
-					t.Fatalf("Validate: %v", err)
-				}
-				return
-			}
-			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-				t.Errorf("Validate error = %v, want %q", err, tt.wantErr)
-			}
+			requireErr(t, err, tt.wantErr)
 		})
 	}
 }
@@ -455,15 +363,7 @@ func TestManifestConnectorImageID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := ManifestConnector{Type: "importer", ImageID: tt.imageID, Protocols: []string{"s3"}}
 			err := c.Validate()
-			if tt.wantErr == "" {
-				if err != nil {
-					t.Fatalf("Validate: %v", err)
-				}
-				return
-			}
-			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-				t.Errorf("Validate error = %v, want %q", err, tt.wantErr)
-			}
+			requireErr(t, err, tt.wantErr)
 		})
 	}
 }
@@ -487,15 +387,7 @@ func TestManifestConnectorImage(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := ManifestConnector{Type: "importer", ImageID: testImageID, Image: tt.image, Protocols: []string{"s3"}}
 			err := c.Validate()
-			if tt.wantErr == "" {
-				if err != nil {
-					t.Fatalf("Validate: %v", err)
-				}
-				return
-			}
-			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-				t.Errorf("Validate error = %v, want %q", err, tt.wantErr)
-			}
+			requireErr(t, err, tt.wantErr)
 		})
 	}
 }
@@ -522,15 +414,7 @@ func TestManifestProtocolOwners(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var m Manifest
 			err := m.Parse(strings.NewReader("name: s3\nconnectors: " + tt.connectors + "\n"))
-			if tt.wantErr == "" {
-				if err != nil {
-					t.Fatalf("Parse: %v", err)
-				}
-				return
-			}
-			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-				t.Errorf("Parse error = %v, want %q", err, tt.wantErr)
-			}
+			requireErr(t, err, tt.wantErr)
 		})
 	}
 }
@@ -538,35 +422,22 @@ func TestManifestProtocolOwners(t *testing.T) {
 func TestManifestConnectorFlags(t *testing.T) {
 	c := ManifestConnector{LocationFlags: []string{"localfs", "file", "stream", "needack", "nomerge"}}
 	flags, err := c.Flags()
-	if err != nil {
-		t.Fatalf("Flags: %v", err)
-	}
+	require.NoError(t, err)
 
 	want := location.FLAG_LOCALFS | location.FLAG_FILE | location.FLAG_STREAM |
 		location.FLAG_NEEDACK | location.FLAG_NOMERGE
-	if flags != want {
-		t.Errorf("Flags() = %d, want %d", flags, want)
-	}
+	require.Equal(t, want, flags)
 }
 
 func TestManifestConnectorFlagsEmpty(t *testing.T) {
 	var c ManifestConnector
 	flags, err := c.Flags()
-	if err != nil {
-		t.Fatalf("Flags: %v", err)
-	}
-	if flags != 0 {
-		t.Errorf("Flags() = %d, want 0", flags)
-	}
+	require.NoError(t, err)
+	require.Zero(t, flags)
 }
 
 func TestManifestConnectorFlagsUnknown(t *testing.T) {
 	c := ManifestConnector{LocationFlags: []string{"localfs", "bogus"}}
 	_, err := c.Flags()
-	if err == nil {
-		t.Fatal("expected error for unknown flag")
-	}
-	if !strings.Contains(err.Error(), "bogus") {
-		t.Errorf("error = %v, want it to mention the bad flag", err)
-	}
+	require.ErrorContains(t, err, "bogus")
 }

@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // fakeBackend is an in-memory Backend implementation for exercising the
@@ -112,24 +114,16 @@ func pkgVer(name, version string) *Package {
 
 func TestNewManagerDefaults(t *testing.T) {
 	m, err := New(newFakeBackend(), nil)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	require.NoError(t, err)
 	wantUA := fmt.Sprintf("pkg/v0.0.1 (%s/%s)", runtime.GOOS, runtime.GOARCH)
-	if m.useragent != wantUA {
-		t.Errorf("useragent = %q, want %q", m.useragent, wantUA)
-	}
+	require.Equal(t, wantUA, m.useragent)
 }
 
 func TestNewManagerCustomUserAgent(t *testing.T) {
 	m, err := New(newFakeBackend(), &Options{UserAgent: "myapp/1.0"})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	require.NoError(t, err)
 	wantUA := fmt.Sprintf("myapp/1.0 (%s/%s)", runtime.GOOS, runtime.GOARCH)
-	if m.useragent != wantUA {
-		t.Errorf("useragent = %q, want %q", m.useragent, wantUA)
-	}
+	require.Equal(t, wantUA, m.useragent)
 }
 
 func TestNewManagerURLs(t *testing.T) {
@@ -155,14 +149,10 @@ func TestNewManagerURLs(t *testing.T) {
 			t.Run(option+"/"+tt.url, func(t *testing.T) {
 				_, err := New(newFakeBackend(), opts(tt.url))
 				if !tt.wantErr {
-					if err != nil {
-						t.Fatalf("New: %v", err)
-					}
+					require.NoError(t, err)
 					return
 				}
-				if !errors.Is(err, ErrInvalidOptions) {
-					t.Errorf("New error = %v, want ErrInvalidOptions", err)
-				}
+				require.ErrorIs(t, err, ErrInvalidOptions)
 			})
 		}
 	}
@@ -174,14 +164,10 @@ func TestManagerList(t *testing.T) {
 
 	var names []string
 	for p, err := range m.List() {
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		names = append(names, p.Name)
 	}
-	if !slices.Equal(names, []string{"s3", "ftp"}) {
-		t.Errorf("List() = %v", names)
-	}
+	require.Equal(t, []string{"s3", "ftp"}, names)
 }
 
 func TestAddInvalidOptionCombinations(t *testing.T) {
@@ -200,9 +186,7 @@ func TestAddInvalidOptionCombinations(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			m, _ := New(newFakeBackend(), nil)
 			err := m.Add("s3_v1.0.0_"+runtime.GOOS+"_"+runtime.GOARCH+".ptar", tt.opts)
-			if !errors.Is(err, ErrInvalidOptions) {
-				t.Errorf("Add err = %v, want ErrInvalidOptions", err)
-			}
+			require.ErrorIs(t, err, ErrInvalidOptions)
 		})
 	}
 }
@@ -210,9 +194,7 @@ func TestAddInvalidOptionCombinations(t *testing.T) {
 func TestAddRejectsBadName(t *testing.T) {
 	m, _ := New(newFakeBackend(), nil)
 	err := m.Add("not-a-package", nil)
-	if !errors.Is(err, ErrBadPackageName) {
-		t.Errorf("Add err = %v, want ErrBadPackageName", err)
-	}
+	require.ErrorIs(t, err, ErrBadPackageName)
 }
 
 func TestAddRejectsOSArchMismatch(t *testing.T) {
@@ -222,12 +204,8 @@ func TestAddRejectsOSArchMismatch(t *testing.T) {
 	// A package for an OS that is definitely not the host.
 	bad := "s3_v1.0.0_plan9_sparc64.ptar"
 	err := m.Add(bad, nil)
-	if !errors.Is(err, ErrBadOSArch) {
-		t.Errorf("Add err = %v, want ErrBadOSArch", err)
-	}
-	if len(be.loaded) != 0 {
-		t.Errorf("backend Load called %d times, want 0", len(be.loaded))
-	}
+	require.ErrorIs(t, err, ErrBadOSArch)
+	require.Empty(t, be.loaded)
 }
 
 func TestAddAllowOSArchMismatchStillFailsOnMissingFile(t *testing.T) {
@@ -237,32 +215,22 @@ func TestAddAllowOSArchMismatchStillFailsOnMissingFile(t *testing.T) {
 	// With the mismatch allowed, the OS/arch gate is skipped and we
 	// proceed to open the (nonexistent) file, which should error.
 	err := m.Add("s3_v1.0.0_plan9_sparc64.ptar", &AddOptions{AllowOSArchMismatch: true})
-	if err == nil {
-		t.Fatal("expected error opening missing file")
-	}
-	if errors.Is(err, ErrBadOSArch) {
-		t.Error("got ErrBadOSArch, but mismatch was allowed")
-	}
+	require.Error(t, err)
+	require.NotErrorIs(t, err, ErrBadOSArch)
 }
 
 func TestPreaddNoExistingVersion(t *testing.T) {
 	be := newFakeBackend() // empty
 	m, _ := New(be, nil)
-	if err := m.preadd("s3", "v1.0.0", &AddOptions{}); err != nil {
-		t.Errorf("preadd with no existing version: %v", err)
-	}
-	if len(be.unloaded) != 0 {
-		t.Errorf("unloaded %d, want 0", len(be.unloaded))
-	}
+	require.NoError(t, m.preadd("s3", "v1.0.0", &AddOptions{}))
+	require.Empty(t, be.unloaded)
 }
 
 func TestPreaddAlreadyInstalledDefault(t *testing.T) {
 	be := newFakeBackend(pkgVer("s3", "v1.0.0"))
 	m, _ := New(be, nil)
 	err := m.preadd("s3", "v1.0.0", &AddOptions{})
-	if !errors.Is(err, ErrAlreadyInstalled) {
-		t.Errorf("preadd err = %v, want ErrAlreadyInstalled", err)
-	}
+	require.ErrorIs(t, err, ErrAlreadyInstalled)
 }
 
 func TestPreaddUpgrade(t *testing.T) {
@@ -289,16 +257,11 @@ func TestPreaddUpgrade(t *testing.T) {
 			m, _ := New(be, nil)
 			err := m.preadd("s3", tt.requested, tt.opts)
 			if tt.wantErr != nil {
-				if !errors.Is(err, tt.wantErr) {
-					t.Errorf("preadd err = %v, want %v", err, tt.wantErr)
-				}
-			} else if err != nil {
-				t.Errorf("preadd err = %v, want nil", err)
+				require.ErrorIs(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
 			}
-			gotUnload := len(be.unloaded) > 0
-			if gotUnload != tt.wantUnload {
-				t.Errorf("unloaded = %v, want %v", gotUnload, tt.wantUnload)
-			}
+			require.Equal(t, tt.wantUnload, len(be.unloaded) > 0, "unloaded")
 		})
 	}
 }
@@ -317,12 +280,8 @@ func TestPreaddReplaceDifferentVersion(t *testing.T) {
 		t.Run("installed_"+installed, func(t *testing.T) {
 			be := newFakeBackend(pkgVer("s3", installed))
 			m, _ := New(be, nil)
-			if err := m.preadd("s3", "v1.5.0", &AddOptions{Replace: true}); err != nil {
-				t.Errorf("preadd with Replace (installed %s -> v1.5.0) = %v, want nil", installed, err)
-			}
-			if len(be.unloaded) != 1 {
-				t.Errorf("Replace unloaded %d existing packages, want 1", len(be.unloaded))
-			}
+			require.NoError(t, m.preadd("s3", "v1.5.0", &AddOptions{Replace: true}))
+			require.Len(t, be.unloaded, 1)
 		})
 	}
 }
@@ -332,55 +291,38 @@ func TestPreaddAllowMultipleVersions(t *testing.T) {
 	m, _ := New(be, nil)
 
 	// A different version is fine and does not unload the existing one.
-	if err := m.preadd("s3", "v2.0.0", &AddOptions{AllowMultipleVersions: true}); err != nil {
-		t.Errorf("preadd v2: %v", err)
-	}
-	if len(be.unloaded) != 0 {
-		t.Errorf("unloaded %d, want 0 with AllowMultipleVersions", len(be.unloaded))
-	}
+	require.NoError(t, m.preadd("s3", "v2.0.0", &AddOptions{AllowMultipleVersions: true}))
+	require.Empty(t, be.unloaded)
 
 	// The same version, however, is still rejected.
-	if err := m.preadd("s3", "v1.0.0", &AddOptions{AllowMultipleVersions: true}); !errors.Is(err, ErrAlreadyInstalled) {
-		t.Errorf("preadd same version err = %v, want ErrAlreadyInstalled", err)
-	}
+	require.ErrorIs(t, m.preadd("s3", "v1.0.0", &AddOptions{AllowMultipleVersions: true}), ErrAlreadyInstalled)
 }
 
 func TestPreaddPropagatesListError(t *testing.T) {
 	be := newFakeBackend()
 	be.listErr = errors.New("boom")
 	m, _ := New(be, nil)
-	if err := m.preadd("s3", "v1.0.0", &AddOptions{}); err == nil {
-		t.Fatal("expected list error to propagate")
-	}
+	require.Error(t, m.preadd("s3", "v1.0.0", &AddOptions{}))
 }
 
 func TestDelRequiresTargetOrAll(t *testing.T) {
 	m, _ := New(newFakeBackend(pkgOf(t, "s3")), nil)
-	if err := m.Del("", nil); !errors.Is(err, ErrBadPackageName) {
-		t.Errorf("Del empty target err = %v, want ErrBadPackageName", err)
-	}
+	require.ErrorIs(t, m.Del("", nil), ErrBadPackageName)
 }
 
 func TestDelByName(t *testing.T) {
 	be := newFakeBackend(pkgOf(t, "s3"), pkgOf(t, "ftp"))
 	m, _ := New(be, nil)
-	if err := m.Del("s3", nil); err != nil {
-		t.Fatalf("Del: %v", err)
-	}
-	if len(be.unloaded) != 1 || be.unloaded[0].Name != "s3" {
-		t.Errorf("unloaded = %v, want [s3]", be.unloaded)
-	}
+	require.NoError(t, m.Del("s3", nil))
+	require.Len(t, be.unloaded, 1)
+	require.Equal(t, "s3", be.unloaded[0].Name)
 }
 
 func TestDelAll(t *testing.T) {
 	be := newFakeBackend(pkgOf(t, "s3"), pkgOf(t, "ftp"))
 	m, _ := New(be, nil)
-	if err := m.Del("", &DelOptions{All: true}); err != nil {
-		t.Fatalf("Del all: %v", err)
-	}
-	if len(be.unloaded) != 2 {
-		t.Errorf("unloaded %d, want 2", len(be.unloaded))
-	}
+	require.NoError(t, m.Del("", &DelOptions{All: true}))
+	require.Len(t, be.unloaded, 2)
 }
 
 func TestFetchRecipe(t *testing.T) {
@@ -398,12 +340,9 @@ func TestFetchRecipe(t *testing.T) {
 
 	m, _ := New(newFakeBackend(), &Options{DistURL: srv.URL})
 	r, err := m.FetchRecipe("s3", nil)
-	if err != nil {
-		t.Fatalf("FetchRecipe: %v", err)
-	}
-	if r.Name != "s3" || r.Version != "v1.2.3" {
-		t.Errorf("recipe = %+v", r)
-	}
+	require.NoError(t, err)
+	require.Equal(t, "s3", r.Name)
+	require.Equal(t, "v1.2.3", r.Version)
 }
 
 func TestFetchRecipeRejectsBadName(t *testing.T) {
@@ -416,27 +355,19 @@ func TestFetchRecipeRejectsBadName(t *testing.T) {
 	m, _ := New(newFakeBackend(), &Options{DistURL: srv.URL})
 	for _, name := range []string{"", "..", "../s3", "s3/../../x", "-rf", "s3_extra"} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := m.FetchRecipe(name, nil); !errors.Is(err, ErrBadPackageName) {
-				t.Errorf("FetchRecipe(%q) error = %v, want ErrBadPackageName", name, err)
-			}
+			_, err := m.FetchRecipe(name, nil)
+			require.ErrorIs(t, err, ErrBadPackageName)
 		})
 	}
 
 	// Add derives the name from its target on the implicit fetch path.
-	if err := m.Add("..", &AddOptions{ImplicitFetch: true}); !errors.Is(err, ErrBadPackageName) {
-		t.Errorf("Add(\"..\") error = %v, want ErrBadPackageName", err)
-	}
+	require.ErrorIs(t, m.Add("..", &AddOptions{ImplicitFetch: true}), ErrBadPackageName)
 }
 
 func TestFetchRecipeWithoutDistURL(t *testing.T) {
 	m, _ := New(newFakeBackend(), nil)
 	_, err := m.FetchRecipe("s3", nil)
-	if err == nil {
-		t.Fatal("expected error for Fetch without a DistURL")
-	}
-	if !errors.Is(err, ErrNoDistURL) {
-		t.Fatalf("expected ErrNoDistURL, got %v (%T)", err, err)
-	}
+	require.ErrorIs(t, err, ErrNoDistURL)
 }
 
 func TestFetchRecipeHTTPError(t *testing.T) {
@@ -446,9 +377,8 @@ func TestFetchRecipeHTTPError(t *testing.T) {
 	defer srv.Close()
 
 	m, _ := New(newFakeBackend(), &Options{DistURL: srv.URL})
-	if _, err := m.FetchRecipe("s3", nil); err == nil {
-		t.Fatal("expected error for 404 recipe")
-	}
+	_, err := m.FetchRecipe("s3", nil)
+	require.Error(t, err)
 }
 
 func TestFetchBinaryThroughAdd(t *testing.T) {
@@ -476,19 +406,11 @@ func TestFetchBinaryThroughAdd(t *testing.T) {
 
 	// ImplicitFetch with a bare name (no .ptar) drives the recipe ->
 	// binary fetch path.
-	if err := m.Add("s3", &AddOptions{ImplicitFetch: true}); err != nil {
-		t.Fatalf("Add (implicit fetch): %v", err)
-	}
-	if len(be.loaded) != 1 {
-		t.Fatalf("backend Load called %d times, want 1", len(be.loaded))
-	}
-	got := be.loaded[0]
-	if got.Name != "s3" || got.Version != "v1.2.3" {
-		t.Errorf("loaded package = %+v", got)
-	}
-	if string(be.loadData[wantFile]) != "PTARDATA" {
-		t.Errorf("loaded data = %q, want PTARDATA", be.loadData[wantFile])
-	}
+	require.NoError(t, m.Add("s3", &AddOptions{ImplicitFetch: true}))
+	require.Len(t, be.loaded, 1)
+	require.Equal(t, "s3", be.loaded[0].Name)
+	require.Equal(t, "v1.2.3", be.loaded[0].Version)
+	require.Equal(t, "PTARDATA", string(be.loadData[wantFile]))
 }
 
 func TestFetchBinaryRejectsBadName(t *testing.T) {
@@ -504,12 +426,8 @@ func TestFetchBinaryRejectsBadName(t *testing.T) {
 			m, _ := New(be, &Options{DistURL: srv.URL})
 
 			err := m.Add(name, &AddOptions{ImplicitFetch: true, Version: "v1.2.3"})
-			if !errors.Is(err, ErrBadPackageName) {
-				t.Fatalf("Add error = %v, want ErrBadPackageName", err)
-			}
-			if len(be.loaded) != 0 {
-				t.Errorf("backend Load called %d times, want 0", len(be.loaded))
-			}
+			require.ErrorIs(t, err, ErrBadPackageName)
+			require.Empty(t, be.loaded)
 		})
 	}
 }
@@ -527,12 +445,8 @@ func TestAddRejectsShorthandVersion(t *testing.T) {
 			m, _ := New(be, &Options{DistURL: srv.URL})
 
 			err := m.Add("s3", &AddOptions{ImplicitFetch: true, Version: version, Replace: true})
-			if !errors.Is(err, ErrBadPackageName) {
-				t.Fatalf("Add error = %v, want ErrBadPackageName", err)
-			}
-			if len(be.unloaded) != 0 {
-				t.Errorf("unloaded %v, want nothing", be.unloaded)
-			}
+			require.ErrorIs(t, err, ErrBadPackageName)
+			require.Empty(t, be.unloaded)
 		})
 	}
 }
@@ -553,15 +467,10 @@ func TestFetchRecipeRejectsMismatch(t *testing.T) {
 			be := newFakeBackend()
 			m, _ := New(be, &Options{DistURL: srv.URL})
 
-			if _, err := m.FetchRecipe("s3", nil); !errors.Is(err, ErrRecipeMismatch) {
-				t.Errorf("FetchRecipe error = %v, want ErrRecipeMismatch", err)
-			}
-			if err := m.Add("s3", &AddOptions{ImplicitFetch: true}); !errors.Is(err, ErrRecipeMismatch) {
-				t.Errorf("Add error = %v, want ErrRecipeMismatch", err)
-			}
-			if len(be.loaded) != 0 {
-				t.Errorf("backend Load called %d times, want 0", len(be.loaded))
-			}
+			_, err := m.FetchRecipe("s3", nil)
+			require.ErrorIs(t, err, ErrRecipeMismatch)
+			require.ErrorIs(t, m.Add("s3", &AddOptions{ImplicitFetch: true}), ErrRecipeMismatch)
+			require.Empty(t, be.loaded)
 		})
 	}
 }
@@ -600,19 +509,13 @@ func TestAddFromNonDefaultEdition(t *testing.T) {
 		}),
 	})
 
-	if err := m.Add("s3", &AddOptions{ImplicitFetch: true, Edition: "devel"}); err != nil {
-		t.Fatalf("Add: %v", err)
-	}
+	require.NoError(t, m.Add("s3", &AddOptions{ImplicitFetch: true, Edition: "devel"}))
 
 	wantOrigin := srv.URL + root + "devel"
 	for _, name := range []string{"recipe.yaml", wantFile} {
-		if got := origins[name]; got != wantOrigin {
-			t.Errorf("%s origin = %q, want %q", name, got, wantOrigin)
-		}
+		require.Equal(t, wantOrigin, origins[name], "%s origin", name)
 	}
-	if string(be.loadData[wantFile]) != "PTARDATA" {
-		t.Errorf("loaded data = %q, want PTARDATA", be.loadData[wantFile])
-	}
+	require.Equal(t, "PTARDATA", string(be.loadData[wantFile]))
 }
 
 func TestFetchBinaryWithExplicitVersionSkipsRecipe(t *testing.T) {
@@ -630,15 +533,10 @@ func TestFetchBinaryWithExplicitVersionSkipsRecipe(t *testing.T) {
 	be := newFakeBackend()
 	m, _ := New(be, &Options{DistURL: srv.URL})
 
-	if err := m.Add("s3", &AddOptions{ImplicitFetch: true, Version: "v3.0.0"}); err != nil {
-		t.Fatalf("Add: %v", err)
-	}
-	if recipeHit {
-		t.Error("recipe endpoint was hit despite explicit Version")
-	}
-	if len(be.loaded) != 1 || be.loaded[0].Version != "v3.0.0" {
-		t.Errorf("loaded = %+v", be.loaded)
-	}
+	require.NoError(t, m.Add("s3", &AddOptions{ImplicitFetch: true, Version: "v3.0.0"}))
+	require.False(t, recipeHit, "recipe endpoint was hit despite explicit Version")
+	require.Len(t, be.loaded, 1)
+	require.Equal(t, "v3.0.0", be.loaded[0].Version)
 }
 
 func TestFetchRequiresAuthWhenConfigured(t *testing.T) {
@@ -653,9 +551,7 @@ func TestFetchRequiresAuthWhenConfigured(t *testing.T) {
 	// any request is made.
 	m, _ := New(be, &Options{DistURL: srv.URL, BinaryNeedsAuth: true})
 	err := m.Add("s3", &AddOptions{ImplicitFetch: true, Version: "v1.0.0"})
-	if !errors.Is(err, ErrAuthorizationRequired) {
-		t.Errorf("Add err = %v, want ErrAuthorizationRequired", err)
-	}
+	require.ErrorIs(t, err, ErrAuthorizationRequired)
 }
 
 func TestWithBearer(t *testing.T) {
@@ -672,32 +568,22 @@ func TestWithBearer(t *testing.T) {
 		BinaryNeedsAuth: true,
 		RequestHook:     WithBearer(func() (string, error) { return "secrettoken", nil }),
 	})
-	if err := m.Add("s3", &AddOptions{ImplicitFetch: true, Version: "v1.0.0"}); err != nil {
-		t.Fatalf("Add: %v", err)
-	}
-	if seen != "Bearer secrettoken" {
-		t.Errorf("Authorization = %q, want Bearer secrettoken", seen)
-	}
+	require.NoError(t, m.Add("s3", &AddOptions{ImplicitFetch: true, Version: "v1.0.0"}))
+	require.Equal(t, "Bearer secrettoken", seen)
 }
 
 func TestWithBearerEmptyTokenOmitsHeader(t *testing.T) {
 	hook := WithBearer(func() (string, error) { return "", nil })
 	req, _ := http.NewRequest("GET", "http://example.com", nil)
-	if err := hook(req); err != nil {
-		t.Fatal(err)
-	}
-	if got := req.Header.Get("Authorization"); got != "" {
-		t.Errorf("Authorization = %q, want empty", got)
-	}
+	require.NoError(t, hook(req))
+	require.Empty(t, req.Header.Get("Authorization"))
 }
 
 func TestWithBearerError(t *testing.T) {
 	want := errors.New("token failure")
 	hook := WithBearer(func() (string, error) { return "", want })
 	req, _ := http.NewRequest("GET", "http://example.com", nil)
-	if err := hook(req); !errors.Is(err, want) {
-		t.Errorf("hook err = %v, want %v", err, want)
-	}
+	require.ErrorIs(t, hook(req), want)
 }
 
 func TestQueryOnlyLocal(t *testing.T) {
@@ -705,20 +591,13 @@ func TestQueryOnlyLocal(t *testing.T) {
 	m, _ := New(be, nil)
 
 	got, err := m.Query(&QueryOptions{OnlyLocal: true})
-	if err != nil {
-		t.Fatalf("Query: %v", err)
-	}
-	if len(got) != 2 {
-		t.Fatalf("Query returned %d, want 2", len(got))
-	}
+	require.NoError(t, err)
+	require.Len(t, got, 2)
 	// results are sorted by name
-	if got[0].Name != "ftp" || got[1].Name != "s3" {
-		t.Errorf("order = %q, %q; want ftp, s3", got[0].Name, got[1].Name)
-	}
+	require.Equal(t, "ftp", got[0].Name)
+	require.Equal(t, "s3", got[1].Name)
 	for _, in := range got {
-		if in.Installation.Status != "installed" {
-			t.Errorf("%s status = %q, want installed", in.Name, in.Installation.Status)
-		}
+		require.Equal(t, "installed", in.Installation.Status, in.Name)
 	}
 }
 
@@ -726,12 +605,7 @@ func TestQueryWithoutApiURL(t *testing.T) {
 	m, _ := New(newFakeBackend(), nil)
 
 	_, err := m.Query(nil)
-	if err == nil {
-		t.Fatalf("expected Query without ApiURL to fail")
-	}
-	if !errors.Is(err, ErrNoApiURL) {
-		t.Fatalf("expected err to be ErrNoApiURL, got %v (%T)", err, err)
-	}
+	require.ErrorIs(t, err, ErrNoApiURL)
 }
 
 func TestQueryMergesRemoteIndex(t *testing.T) {
@@ -780,9 +654,7 @@ func TestQueryMergesRemoteIndex(t *testing.T) {
 	m, _ := New(be, &Options{ApiURL: srv.URL})
 
 	got, err := m.Query(nil)
-	if err != nil {
-		t.Fatalf("Query: %v", err)
-	}
+	require.NoError(t, err)
 
 	byName := map[string]*Integration{}
 	for _, in := range got {
@@ -790,52 +662,25 @@ func TestQueryMergesRemoteIndex(t *testing.T) {
 	}
 
 	// wrong api version and non-community edition are filtered out.
-	if _, ok := byName["wrongapi"]; ok {
-		t.Error("wrongapi should be filtered by API version")
-	}
-	if _, ok := byName["enterprise-only"]; ok {
-		t.Error("enterprise-only should be filtered by edition")
-	}
+	require.NotContains(t, byName, "wrongapi", "should be filtered by API version")
+	require.NotContains(t, byName, "enterprise-only", "should be filtered by edition")
 
-	s3, ok := byName["s3"]
-	if !ok {
-		t.Fatal("s3 missing from results")
-	}
-	if s3.Installation.Status != "installed" {
-		t.Errorf("s3 status = %q, want installed", s3.Installation.Status)
-	}
-	if s3.Installation.Version != "v1.2.3" {
-		t.Errorf("s3 installed version = %q, want v1.2.3", s3.Installation.Version)
-	}
-	if s3.LatestVersion != "v2.0.0" {
-		t.Errorf("s3 latest = %q, want v2.0.0", s3.LatestVersion)
-	}
-	if s3.DisplayName != "Amazon S3" {
-		t.Errorf("s3 display name = %q, want merged from index", s3.DisplayName)
-	}
-	if !s3.Installation.Available {
-		t.Error("s3 should be marked available")
-	}
-	if !s3.Types.Storage {
-		t.Error("s3 should have Types.Storage from its storage connector")
-	}
-	if s3.Stage != "stable" {
-		t.Errorf("s3 stage = %q, want stable (no prerelease)", s3.Stage)
-	}
+	require.Contains(t, byName, "s3")
+	s3 := byName["s3"]
+	require.Equal(t, "installed", s3.Installation.Status)
+	require.Equal(t, "v1.2.3", s3.Installation.Version)
+	require.Equal(t, "v2.0.0", s3.LatestVersion)
+	require.Equal(t, "Amazon S3", s3.DisplayName, "merged from index")
+	require.True(t, s3.Installation.Available)
+	require.True(t, s3.Types.Storage, "from its storage connector")
+	require.Equal(t, "stable", s3.Stage)
 
-	ftp, ok := byName["ftp"]
-	if !ok {
-		t.Fatal("ftp missing from results")
-	}
-	if ftp.Installation.Status != "not-installed" {
-		t.Errorf("ftp status = %q, want not-installed", ftp.Installation.Status)
-	}
-	if ftp.Stage != "beta" {
-		t.Errorf("ftp stage = %q, want beta", ftp.Stage)
-	}
-	if !ftp.Types.Source || !ftp.Types.Destination {
-		t.Errorf("ftp types = %+v, want source+destination", ftp.Types)
-	}
+	require.Contains(t, byName, "ftp")
+	ftp := byName["ftp"]
+	require.Equal(t, "not-installed", ftp.Installation.Status)
+	require.Equal(t, "beta", ftp.Stage)
+	require.True(t, ftp.Types.Source)
+	require.True(t, ftp.Types.Destination)
 }
 
 func TestQueryFetchesIndexFromIndexURL(t *testing.T) {
@@ -870,15 +715,10 @@ func TestQueryFetchesIndexFromIndexURL(t *testing.T) {
 	})
 
 	got, err := m.Query(nil)
-	if err != nil {
-		t.Fatalf("Query: %v", err)
-	}
-	if path != "/integrations-"+PLUGIN_BUNDLE_VERSION+".json" {
-		t.Errorf("index fetched from %q, want it at the mirror root", path)
-	}
-	if len(got) != 1 || got[0].Name != "s3" {
-		t.Fatalf("Query = %+v, want the mirror's s3", got)
-	}
+	require.NoError(t, err)
+	require.Equal(t, "/integrations-"+PLUGIN_BUNDLE_VERSION+".json", path, "index fetched from the mirror root")
+	require.Len(t, got, 1)
+	require.Equal(t, "s3", got[0].Name)
 }
 
 func TestQueryStageDerivation(t *testing.T) {
@@ -898,15 +738,9 @@ func TestQueryStageDerivation(t *testing.T) {
 		m, _ := New(newFakeBackend(), &Options{ApiURL: srv.URL})
 		got, err := m.Query(nil)
 		srv.Close()
-		if err != nil {
-			t.Fatalf("Query(%s): %v", version, err)
-		}
-		if len(got) != 1 {
-			t.Fatalf("version %s: got %d results, want 1", version, len(got))
-		}
-		if got[0].Stage != wantStage {
-			t.Errorf("version %s: stage = %q, want %q", version, got[0].Stage, wantStage)
-		}
+		require.NoError(t, err)
+		require.Len(t, got, 1)
+		require.Equal(t, wantStage, got[0].Stage, "version %s", version)
 	}
 }
 
@@ -935,16 +769,9 @@ func TestQueryTypeFilter(t *testing.T) {
 		{"destination", "dst"},
 	} {
 		got, err := m.Query(&QueryOptions{Type: tt.typ})
-		if err != nil {
-			t.Fatalf("Query type=%s: %v", tt.typ, err)
-		}
-		if len(got) != 1 || got[0].Name != tt.want {
-			names := make([]string, len(got))
-			for i, g := range got {
-				names[i] = g.Name
-			}
-			t.Errorf("Query type=%s = %v, want [%s]", tt.typ, names, tt.want)
-		}
+		require.NoError(t, err)
+		require.Len(t, got, 1, "type=%s", tt.typ)
+		require.Equal(t, tt.want, got[0].Name, "type=%s", tt.typ)
 	}
 }
 
@@ -964,21 +791,14 @@ func TestQueryTagAndStatusFilter(t *testing.T) {
 	m, _ := New(newFakeBackend(), &Options{ApiURL: srv.URL})
 
 	got, err := m.Query(&QueryOptions{Tag: "cloud"})
-	if err != nil {
-		t.Fatalf("Query tag: %v", err)
-	}
-	if len(got) != 1 || got[0].Name != "a" {
-		t.Errorf("Query tag=cloud returned wrong set: %+v", got)
-	}
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.Equal(t, "a", got[0].Name)
 
 	// nothing is installed, so status=installed should match nothing.
 	got, err = m.Query(&QueryOptions{Status: "installed"})
-	if err != nil {
-		t.Fatalf("Query status: %v", err)
-	}
-	if len(got) != 0 {
-		t.Errorf("Query status=installed returned %d, want 0", len(got))
-	}
+	require.NoError(t, err)
+	require.Empty(t, got)
 }
 
 func TestQueryAPIError(t *testing.T) {
@@ -988,7 +808,6 @@ func TestQueryAPIError(t *testing.T) {
 	defer srv.Close()
 
 	m, _ := New(newFakeBackend(), &Options{ApiURL: srv.URL})
-	if _, err := m.Query(nil); err == nil {
-		t.Fatal("expected error when API returns 500")
-	}
+	_, err := m.Query(nil)
+	require.Error(t, err)
 }

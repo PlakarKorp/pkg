@@ -1,12 +1,14 @@
 package pkg
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // recipeRegistry serves a package directory: a recipe, its signature, and
@@ -52,30 +54,14 @@ func TestRecipeIsVerifiedBeforeParse(t *testing.T) {
 			return nil
 		}),
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	r, err := m.FetchRecipe("s3", nil)
-	if err != nil {
-		t.Fatalf("FetchRecipe: %v", err)
-	}
-
-	if seen == nil {
-		t.Fatal("the recipe was parsed without reaching the Verifier")
-	}
-
-	if seen.Filename != "recipe.yaml" {
-		t.Errorf("filename = %q, want recipe.yaml", seen.Filename)
-	}
-
-	if string(seen.Signature) != "signature-bytes" {
-		t.Errorf("signature = %q, want the published one", seen.Signature)
-	}
-
-	if r.Semver() != "v1.1.5" {
-		t.Errorf("resolved version %q, want v1.1.5", r.Semver())
-	}
+	require.NoError(t, err)
+	require.NotNil(t, seen, "the recipe was parsed without reaching the Verifier")
+	require.Equal(t, "recipe.yaml", seen.Filename)
+	require.Equal(t, "signature-bytes", string(seen.Signature))
+	require.Equal(t, "v1.1.5", r.Semver())
 }
 
 // A rejected recipe must not resolve a version: the whole point is that an
@@ -92,13 +78,10 @@ func TestRejectedRecipeYieldsNoVersion(t *testing.T) {
 			return fmt.Errorf("nope: %w", ErrUnverified)
 		}),
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
-	if _, err := m.FetchRecipe("s3", nil); !errors.Is(err, ErrUnverified) {
-		t.Errorf("FetchRecipe error = %v, want ErrUnverified", err)
-	}
+	_, err = m.FetchRecipe("s3", nil)
+	require.ErrorIs(t, err, ErrUnverified)
 }
 
 // A recipe published without a signature still reaches the Verifier, with a
@@ -118,21 +101,12 @@ func TestUnsignedRecipeReachesVerifier(t *testing.T) {
 			return nil
 		}),
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
-	if _, err := m.FetchRecipe("s3", nil); err != nil {
-		t.Fatalf("FetchRecipe: %v", err)
-	}
-
-	if seen == nil {
-		t.Fatal("the recipe never reached the Verifier")
-	}
-
-	if seen.Signature != nil {
-		t.Errorf("expected a nil signature, got %q", seen.Signature)
-	}
+	_, err = m.FetchRecipe("s3", nil)
+	require.NoError(t, err)
+	require.NotNil(t, seen, "the recipe never reached the Verifier")
+	require.Nil(t, seen.Signature)
 }
 
 // Without a Verifier the signature is not even requested, so an existing
@@ -154,17 +128,12 @@ func TestNoVerifierSkipsSignatureFetch(t *testing.T) {
 	defer srv.Close()
 
 	m, err := New(newFakeBackend(), &Options{DistURL: srv.URL})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
-	if _, err := m.FetchRecipe("s3", nil); err != nil {
-		t.Fatalf("FetchRecipe: %v", err)
-	}
+	_, err = m.FetchRecipe("s3", nil)
+	require.NoError(t, err)
 
 	for _, p := range requested {
-		if len(p) > len(sigSuffix) && p[len(p)-len(sigSuffix):] == sigSuffix {
-			t.Errorf("fetched %s with no Verifier configured", p)
-		}
+		require.False(t, strings.HasSuffix(p, sigSuffix), "fetched %s with no Verifier configured", p)
 	}
 }
