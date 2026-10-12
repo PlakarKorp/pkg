@@ -70,6 +70,9 @@ func isOsArchChar(c byte) bool {
 }
 
 func checkName(name string) error {
+	if strings.HasPrefix(name, "-") {
+		return fmt.Errorf("%w %q: starts with '-'", ErrBadPackageName, name)
+	}
 	for i := 0; i < len(name); i++ {
 		if !isNameChar(name[i]) {
 			return fmt.Errorf("%w %q: contains invalid char '%c",
