@@ -385,3 +385,34 @@ func TestFlatBackendLoadAllManifestName(t *testing.T) {
 		})
 	}
 }
+
+func TestFlatBackendLoadAllConnectorKind(t *testing.T) {
+	const (
+		native    = "{type: importer, executable: tool, protocols: [s3]}"
+		container = "{type: exporter, image_id: "+testImageID+", protocols: [s3]}"
+	)
+	tests := []struct {
+		name       string
+		os         string
+		connectors string
+		wantErr    error
+	}{
+		{"native package, executable", runtime.GOOS, "[" + native + "]", nil},
+		{"container package, image", OSContainer, "[" + container + "]", nil},
+		{"container package, executable", OSContainer, "[" + native + "]", ErrManifestMismatch},
+		{"native package, image", runtime.GOOS, "[" + container + "]", ErrManifestMismatch},
+		{"container package, mixed", OSContainer, "[" + container + ", " + native + "]", ErrManifestMismatch},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			be, pkgdir, cachedir := newTestFlatBackend(t, nil)
+			pkg := pkgOf(t, "s3")
+			pkg.OperatingSystem = tt.os
+			stageExtracted(t, pkgdir, cachedir, pkg, "name: s3\nconnectors: "+tt.connectors+"\n")
+
+			if err := be.LoadAll(); !errors.Is(err, tt.wantErr) {
+				t.Fatalf("LoadAll error = %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}
