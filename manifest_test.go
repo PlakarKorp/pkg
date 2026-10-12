@@ -367,6 +367,38 @@ func TestManifestConnectorProtocols(t *testing.T) {
 	}
 }
 
+func TestManifestConnectorExecutable(t *testing.T) {
+	tests := []struct {
+		name       string
+		executable string
+		wantErr    string
+	}{
+		{"plain", "s3-importer", ""},
+		{"dot slash", "./s3-importer", ""},
+		{"subdirectory", "bin/s3-importer", ""},
+		{"blank", "  ", "executable is blank"},
+		{"parent", "../s3-importer", `executable "../s3-importer" escapes the integration directory`},
+		{"inner parent", "bin/../../s3-importer", `executable "bin/../../s3-importer" escapes the integration directory`},
+		{"sibling directory", "../s3_v1.0.0_linux_amd64-evil/x", "escapes the integration directory"},
+		{"absolute", "/bin/sh", `executable "/bin/sh" escapes the integration directory`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := ManifestConnector{Type: "importer", Executable: tt.executable, Protocols: []string{"s3"}}
+			err := c.Validate()
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("Validate error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestManifestProtocolOwners(t *testing.T) {
 	tests := []struct {
 		name       string

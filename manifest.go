@@ -24,6 +24,7 @@ import (
 	"net/mail"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -230,8 +231,11 @@ func (conn *ManifestConnector) Validate() error {
 			return fmt.Errorf("cannot use image with executable")
 		}
 
-		if conn.Executable == "" {
-			return fmt.Errorf("executable not set")
+		if strings.TrimSpace(conn.Executable) == "" {
+			return fmt.Errorf("executable is blank")
+		}
+		if !filepath.IsLocal(conn.Executable) {
+			return fmt.Errorf("executable %q escapes the integration directory", conn.Executable)
 		}
 	} else {
 		if flags&location.FLAG_LOCALFS != 0 {
