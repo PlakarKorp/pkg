@@ -149,6 +149,11 @@ func TestManifestFields(t *testing.T) {
 		{"email contact with name", "name: s3\ncontact: Help <help@plakar.io>\n", ""},
 		{"blank contact", "name: s3\ncontact: ' '\n", `contact " " is neither an email address nor a URL`},
 		{"contact with neither", "name: s3\ncontact: help at plakar.io\n", `contact "help at plakar.io" is neither an email address nor a URL`},
+		{"license", "name: s3\nlicense: ISC\n", ""},
+		{"license expression", "name: s3\nlicense: MIT OR Apache-2.0\n", ""},
+		{"blank license", "name: s3\nlicense: ' '\n", `license " " must be a single line without surrounding whitespace`},
+		{"license with surrounding space", "name: s3\nlicense: ' ISC'\n", `license " ISC" must be a single line`},
+		{"multi-line license", "name: s3\nlicense: \"ISC\\nMIT\"\n", `license "ISC\nMIT" must be a single line`},
 		{"contact without scheme", "name: s3\ncontact: plakar.io/support\n", `contact "plakar.io/support" is neither an email address nor a URL`},
 	}
 	for _, tt := range tests {
