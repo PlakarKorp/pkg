@@ -58,15 +58,15 @@ func TestSchemas(t *testing.T) {
 	}{
 		{
 			"one per connector",
-			`[{type: importer, executable: x, protocols: [x], validator: ./importer/schema.json},
-			  {type: exporter, executable: x, protocols: [x], validator: ./exporter/schema.json}]`,
+			`[{type: importer, executable: x, protocols: [foo], validator: ./importer/schema.json},
+			  {type: exporter, executable: x, protocols: [foo], validator: ./exporter/schema.json}]`,
 			[]string{"./importer/schema.json", "./exporter/schema.json"},
 		},
 		{
 			"drops duplicates, keeps connector order",
-			`[{type: importer, executable: x, protocols: [x], validator: b.json},
-			  {type: exporter, executable: x, protocols: [x], validator: a.json},
-			  {type: storage, executable: x, protocols: [x], validator: b.json}]`,
+			`[{type: importer, executable: x, protocols: [foo], validator: b.json},
+			  {type: exporter, executable: x, protocols: [foo], validator: a.json},
+			  {type: storage, executable: x, protocols: [foo], validator: b.json}]`,
 			[]string{"b.json", "a.json"},
 		},
 	}
