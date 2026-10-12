@@ -292,19 +292,21 @@ func TestManifestWindowsExeSuffixSkipsImageConnectors(t *testing.T) {
 	}
 }
 
+const testImageID = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+
 func TestManifestConnectorValidate(t *testing.T) {
 	valid := func(c ManifestConnector) error { return c.Validate() }
 
 	if err := valid(ManifestConnector{Type: "importer", Protocols: []string{"foo"}, Executable: "tool"}); err != nil {
 		t.Errorf("native connector: %v", err)
 	}
-	if err := valid(ManifestConnector{Type: "importer", Protocols: []string{"foo"}, ImageID: "sha256:aa"}); err != nil {
+	if err := valid(ManifestConnector{Type: "importer", Protocols: []string{"foo"}, ImageID: testImageID}); err != nil {
 		t.Errorf("image connector: %v", err)
 	}
-	if err := valid(ManifestConnector{Type: "importer", Protocols: []string{"foo"}, ImageID: "sha256:aa", Image: "reg/img:1"}); err != nil {
+	if err := valid(ManifestConnector{Type: "importer", Protocols: []string{"foo"}, ImageID: testImageID, Image: "reg/img:1"}); err != nil {
 		t.Errorf("image connector with registry ref: %v", err)
 	}
-	if err := valid(ManifestConnector{Type: "importer", Protocols: []string{"foo"}, ImageID: "sha256:aa", ExtraFiles: []string{"icon.png"}}); err != nil {
+	if err := valid(ManifestConnector{Type: "importer", Protocols: []string{"foo"}, ImageID: testImageID, ExtraFiles: []string{"icon.png"}}); err != nil {
 		t.Errorf("extra_files on an image connector: %v", err)
 	}
 	if err := valid(ManifestConnector{Type: "importer", Protocols: []string{"foo"}, Executable: "tool", LocationFlags: []string{"localfs"}}); err != nil {
@@ -314,13 +316,13 @@ func TestManifestConnectorValidate(t *testing.T) {
 	if err := valid(ManifestConnector{Type: "importer"}); err == nil {
 		t.Error("connector with neither executable nor image_id should fail")
 	}
-	if err := valid(ManifestConnector{Type: "importer", Executable: "tool", ImageID: "sha256:aa"}); err == nil {
+	if err := valid(ManifestConnector{Type: "importer", Executable: "tool", ImageID: testImageID}); err == nil {
 		t.Error("connector with both executable and image_id should fail")
 	}
 	if err := valid(ManifestConnector{Type: "importer", Executable: "tool", Image: "reg/img:1"}); err == nil {
 		t.Error("image without image_id should fail")
 	}
-	if err := valid(ManifestConnector{Type: "importer", ImageID: "sha256:aa", LocationFlags: []string{"localfs"}}); err == nil {
+	if err := valid(ManifestConnector{Type: "importer", ImageID: testImageID, LocationFlags: []string{"localfs"}}); err == nil {
 		t.Error("localfs image connector should fail")
 	}
 	if err := valid(ManifestConnector{Type: "importer", Executable: "tool", LocationFlags: []string{"bogus"}}); err == nil {
@@ -417,6 +419,37 @@ func TestManifestConnectorExtraFiles(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := ManifestConnector{Type: "importer", Executable: "tool", Protocols: []string{"s3"}, ExtraFiles: tt.files}
+			err := c.Validate()
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("Validate error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestManifestConnectorImageID(t *testing.T) {
+	tests := []struct {
+		name    string
+		imageID string
+		wantErr string
+	}{
+		{"valid", testImageID, ""},
+		{"short", "sha256:aa", `image_id "sha256:aa" is not sha256:<64 lowercase hex digits>`},
+		{"no algorithm", strings.TrimPrefix(testImageID, "sha256:"), "is not sha256:<64 lowercase hex digits>"},
+		{"other algorithm", "sha512:" + strings.Repeat("2", 64), "is not sha256:<64 lowercase hex digits>"},
+		{"uppercase", "sha256:" + strings.Repeat("A", 64), "is not sha256:<64 lowercase hex digits>"},
+		{"too long", testImageID + "2", "is not sha256:<64 lowercase hex digits>"},
+		{"blank", " ", "is not sha256:<64 lowercase hex digits>"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := ManifestConnector{Type: "importer", ImageID: tt.imageID, Protocols: []string{"s3"}}
 			err := c.Validate()
 			if tt.wantErr == "" {
 				if err != nil {
