@@ -36,6 +36,8 @@ import (
 
 var protocolRe = regexp.MustCompile(`^[A-Za-z0-9+.][A-Za-z0-9+.-]+$`)
 
+var imageIDRe = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+
 type ManifestConnector struct {
 	Type          ConnectorType    `yaml:"type"`
 	Class         ResourceClass    `yaml:"class,omitempty"`
@@ -240,6 +242,9 @@ func (conn *ManifestConnector) Validate() error {
 	} else {
 		if flags&location.FLAG_LOCALFS != 0 {
 			return fmt.Errorf("localfs connectors cannot run as containers")
+		}
+		if !imageIDRe.MatchString(conn.ImageID) {
+			return fmt.Errorf("image_id %q is not sha256:<64 lowercase hex digits>", conn.ImageID)
 		}
 	}
 
