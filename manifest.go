@@ -117,6 +117,9 @@ func (m *Manifest) Validate() error {
 	if strings.TrimSpace(m.Name) == "" {
 		return fmt.Errorf("name is required")
 	}
+	if err := checkName(m.Name); err != nil {
+		return fmt.Errorf("name: %w", err)
+	}
 	for _, f := range []struct{ name, value string }{
 		{"display_name", m.DisplayName},
 		{"description", m.Description},
