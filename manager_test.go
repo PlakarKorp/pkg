@@ -464,8 +464,31 @@ func TestFetchBinaryThroughAdd(t *testing.T) {
 	}
 }
 
-func TestFetchBinaryRejectsBadRecipeName(t *testing.T) {
-	for _, name := range []string{"../../evil", "-rf", "s3_extra", "s3/evil"} {
+func TestFetchBinaryRejectsBadName(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request for %q", r.URL.Path)
+		http.Error(w, "unexpected", http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	for _, name := range []string{"..", "-rf", "s3_extra"} {
+		t.Run(name, func(t *testing.T) {
+			be := newFakeBackend()
+			m, _ := New(be, &Options{DistURL: srv.URL})
+
+			err := m.Add(name, &AddOptions{ImplicitFetch: true, Version: "v1.2.3"})
+			if !errors.Is(err, ErrBadPackageName) {
+				t.Fatalf("Add error = %v, want ErrBadPackageName", err)
+			}
+			if len(be.loaded) != 0 {
+				t.Errorf("backend Load called %d times, want 0", len(be.loaded))
+			}
+		})
+	}
+}
+
+func TestFetchRecipeRejectsMismatch(t *testing.T) {
+	for _, name := range []string{"gcs", "../../evil", "-rf", ""} {
 		t.Run(name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if !strings.HasSuffix(r.URL.Path, "recipe.yaml") {
@@ -480,9 +503,11 @@ func TestFetchBinaryRejectsBadRecipeName(t *testing.T) {
 			be := newFakeBackend()
 			m, _ := New(be, &Options{DistURL: srv.URL})
 
-			err := m.Add("s3", &AddOptions{ImplicitFetch: true})
-			if !errors.Is(err, ErrBadPackageName) {
-				t.Fatalf("Add error = %v, want ErrBadPackageName", err)
+			if _, err := m.FetchRecipe("s3", nil); !errors.Is(err, ErrRecipeMismatch) {
+				t.Errorf("FetchRecipe error = %v, want ErrRecipeMismatch", err)
+			}
+			if err := m.Add("s3", &AddOptions{ImplicitFetch: true}); !errors.Is(err, ErrRecipeMismatch) {
+				t.Errorf("Add error = %v, want ErrRecipeMismatch", err)
 			}
 			if len(be.loaded) != 0 {
 				t.Errorf("backend Load called %d times, want 0", len(be.loaded))
