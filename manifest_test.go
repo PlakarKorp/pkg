@@ -154,6 +154,10 @@ func TestManifestFields(t *testing.T) {
 		{"blank license", "name: s3\nlicense: ' '\n", `license " " must be a single line without surrounding whitespace`},
 		{"license with surrounding space", "name: s3\nlicense: ' ISC'\n", `license " ISC" must be a single line`},
 		{"multi-line license", "name: s3\nlicense: \"ISC\\nMIT\"\n", `license "ISC\nMIT" must be a single line`},
+		{"tags", "name: s3\ntags: [cloud, object-storage]\n", ""},
+		{"empty tag", "name: s3\ntags: ['']\n", `tag "" must be a non-empty word`},
+		{"tag with space", "name: s3\ntags: [object storage]\n", `tag "object storage" must be a non-empty word`},
+		{"duplicate tag", "name: s3\ntags: [aws, cloud, aws]\n", `tag "aws" listed twice`},
 		{"contact without scheme", "name: s3\ncontact: plakar.io/support\n", `contact "plakar.io/support" is neither an email address nor a URL`},
 	}
 	for _, tt := range tests {
