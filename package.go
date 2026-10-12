@@ -70,7 +70,7 @@ func isOsArchChar(c byte) bool {
 }
 
 func (pkg *Package) Validate() error {
-	if pkg.Name == "" {
+	if pkg.Name == "" || pkg.Version == "" || pkg.OperatingSystem == "" || pkg.Architecture == "" {
 		return ErrBadPackageName
 	}
 	for i := 0; i < len(pkg.Name); i++ {
