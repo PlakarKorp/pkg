@@ -1,11 +1,13 @@
 package pkg
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/PlakarKorp/kloset/kcontext"
@@ -155,7 +157,7 @@ connectors:
 		t.Fatal(err)
 	}
 
-	if _, err := be.loadmanifest(mpath); err == nil {
+	if _, err := be.loadmanifest(mpath, pkgOf(t, "evil")); err == nil {
 		t.Fatal("loadmanifest accepted an executable path escaping the manifest dir")
 	}
 }
@@ -183,7 +185,7 @@ connectors:
 		t.Fatal(err)
 	}
 
-	m, err := be.loadmanifest(mpath)
+	m, err := be.loadmanifest(mpath, pkgOf(t, "good"))
 	if err != nil {
 		t.Fatalf("loadmanifest: %v", err)
 	}
@@ -212,7 +214,7 @@ connectors:
 		t.Fatal(err)
 	}
 
-	if _, err := be.loadmanifest(mpath); err == nil {
+	if _, err := be.loadmanifest(mpath, pkgOf(t, "badflag")); err == nil {
 		t.Fatal("loadmanifest accepted an unknown location flag")
 	}
 }
@@ -332,5 +334,50 @@ func TestFlatBackendUnloadIdempotent(t *testing.T) {
 	}
 	if err := be.unload(ptarPath, filepath.Join(t.TempDir(), "does-not-exist")); err != nil {
 		t.Errorf("unload with missing extracted dir: %v", err)
+	}
+}
+
+func TestFlatBackendLoadAllManifestName(t *testing.T) {
+	tests := []struct {
+		name     string
+		manifest string
+		wantErr  error
+	}{
+		{"matching", "s3", nil},
+		{"other package", "gcs", ErrManifestMismatch},
+		{"different case", "S3", ErrManifestMismatch},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var loaded []string
+			be, pkgdir, cachedir := newTestFlatBackend(t, &FlatBackendOptions{
+				LoadHook: func(m *Manifest, p *Package, dir string) {
+					loaded = append(loaded, p.Name)
+				},
+			})
+			pkg := pkgOf(t, "s3")
+			touch(t, pkgdir, pkg.Filename())
+
+			// An existing extracted directory makes LoadAll skip the ptar.
+			extracted := filepath.Join(cachedir, strings.TrimSuffix(pkg.Filename(), ".ptar"))
+			if err := os.MkdirAll(extracted, 0755); err != nil {
+				t.Fatal(err)
+			}
+			manifest := "name: " + tt.manifest + "\nconnectors: [{type: importer, executable: tool, protocols: [s3]}]\n"
+			if err := os.WriteFile(filepath.Join(extracted, "manifest.yaml"), []byte(manifest), 0644); err != nil {
+				t.Fatal(err)
+			}
+
+			err := be.LoadAll()
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("LoadAll error = %v, want %v", err, tt.wantErr)
+			}
+			if tt.wantErr == nil && len(loaded) != 1 {
+				t.Errorf("load hook called for %v, want [s3]", loaded)
+			}
+			if tt.wantErr != nil && len(loaded) != 0 {
+				t.Errorf("load hook called for %v, want none", loaded)
+			}
+		})
 	}
 }
