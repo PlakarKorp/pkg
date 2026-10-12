@@ -337,6 +337,20 @@ func TestFlatBackendUnloadIdempotent(t *testing.T) {
 	}
 }
 
+// stageExtracted installs pkg with an already extracted manifest, which
+// makes LoadAll skip the ptar.
+func stageExtracted(t *testing.T, pkgdir, cachedir string, pkg *Package, manifest string) {
+	t.Helper()
+	touch(t, pkgdir, pkg.Filename())
+	extracted := filepath.Join(cachedir, strings.TrimSuffix(pkg.Filename(), ".ptar"))
+	if err := os.MkdirAll(extracted, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(extracted, "manifest.yaml"), []byte(manifest), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestFlatBackendLoadAllManifestName(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -355,18 +369,8 @@ func TestFlatBackendLoadAllManifestName(t *testing.T) {
 					loaded = append(loaded, p.Name)
 				},
 			})
-			pkg := pkgOf(t, "s3")
-			touch(t, pkgdir, pkg.Filename())
-
-			// An existing extracted directory makes LoadAll skip the ptar.
-			extracted := filepath.Join(cachedir, strings.TrimSuffix(pkg.Filename(), ".ptar"))
-			if err := os.MkdirAll(extracted, 0755); err != nil {
-				t.Fatal(err)
-			}
-			manifest := "name: " + tt.manifest + "\nconnectors: [{type: importer, executable: tool, protocols: [s3]}]\n"
-			if err := os.WriteFile(filepath.Join(extracted, "manifest.yaml"), []byte(manifest), 0644); err != nil {
-				t.Fatal(err)
-			}
+			stageExtracted(t, pkgdir, cachedir, pkgOf(t, "s3"),
+				"name: "+tt.manifest+"\nconnectors: [{type: importer, executable: tool, protocols: [s3]}]\n")
 
 			err := be.LoadAll()
 			if !errors.Is(err, tt.wantErr) {
