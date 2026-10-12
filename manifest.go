@@ -85,6 +85,10 @@ func (m *Manifest) Parse(rd io.Reader) error {
 		return fmt.Errorf("failed to decode the manifest: %w", err)
 	}
 
+	if err := m.Validate(); err != nil {
+		return err
+	}
+
 	if len(m.Connectors) == 0 {
 		return fmt.Errorf("no connectors defined?")
 	}
@@ -104,6 +108,23 @@ func (m *Manifest) Parse(rd io.Reader) error {
 		}
 	}
 
+	return nil
+}
+
+// Validate checks the manifest's own fields; connectors are checked
+// separately.
+func (m *Manifest) Validate() error {
+	if strings.TrimSpace(m.Name) == "" {
+		return fmt.Errorf("name is required")
+	}
+	for _, f := range []struct{ name, value string }{
+		{"display_name", m.DisplayName},
+		{"description", m.Description},
+	} {
+		if f.value != "" && strings.TrimSpace(f.value) == "" {
+			return fmt.Errorf("%s is blank", f.name)
+		}
+	}
 	return nil
 }
 
