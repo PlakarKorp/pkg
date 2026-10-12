@@ -234,9 +234,6 @@ func (f *FlatBackend) loadmanifest(mpath string, pkg *Package) (*Manifest, error
 
 	container := pkg.OperatingSystem == OSContainer
 	for i, conn := range m.Connectors {
-		if err := conn.Validate(); err != nil {
-			return nil, err
-		}
 		if (conn.ImageID != "") != container {
 			return nil, fmt.Errorf("%w: connector #%d does not fit OS %q",
 				ErrManifestMismatch, i, pkg.OperatingSystem)
