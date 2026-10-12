@@ -26,6 +26,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"unicode"
 
 	"github.com/PlakarKorp/kloset/location"
 	"go.yaml.in/yaml/v3"
@@ -139,6 +140,16 @@ func (m *Manifest) Validate() error {
 	// inner spaces are ok: consider "MIT OR Apache-2.0"
 	if m.License != "" && (m.License != strings.TrimSpace(m.License) || strings.ContainsAny(m.License, "\r\n")) {
 		return fmt.Errorf("license %q must be a single line without surrounding whitespace", m.License)
+	}
+	seen := make(map[string]bool)
+	for _, tag := range m.Tags {
+		if tag == "" || strings.ContainsFunc(tag, unicode.IsSpace) {
+			return fmt.Errorf("tag %q must be a non-empty word", tag)
+		}
+		if seen[tag] {
+			return fmt.Errorf("tag %q listed twice", tag)
+		}
+		seen[tag] = true
 	}
 	return nil
 }
