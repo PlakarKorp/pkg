@@ -148,6 +148,7 @@ name: evil
 connectors:
   - type: storage
     executable: ../../../etc/passwd
+    protocols: [evil]
 `
 	mpath := filepath.Join(mdir, "manifest.yaml")
 	if err := os.WriteFile(mpath, []byte(manifest), 0644); err != nil {
@@ -173,6 +174,7 @@ connectors:
     class: object-storage
     subclass: s3
     executable: bin/s3-storage
+    protocols: [s3]
     location_flags:
       - localfs
 `
@@ -274,6 +276,7 @@ func TestFlatBackendUnloadHook(t *testing.T) {
 	manifest, err := yaml.Marshal(&Manifest{
 		Name: "s3",
 		Connectors: []ManifestConnector{{
+			Protocols:  []string{"s3"},
 			Type:       ConnectorTypeImporter,
 			Executable: "true",
 			Class:      ResourceClassObjectStorage,
