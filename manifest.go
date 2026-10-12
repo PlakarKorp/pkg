@@ -99,10 +99,26 @@ func (m *Manifest) Parse(rd io.Reader) error {
 		return fmt.Errorf("no connectors defined?")
 	}
 
+	type key struct {
+		ct    ConnectorType
+		proto string
+	}
+	seen := make(map[key]int)
+
 	for i := range m.Connectors {
 		if err := m.Connectors[i].Validate(); err != nil {
 			return fmt.Errorf("connector #%b: %w", i, err)
 		}
+
+		for _, p := range m.Connectors[i].Protocols {
+			k := key{m.Connectors[i].Type, p}
+			if j, ok := seen[k]; ok {
+				return fmt.Errorf("connector #%d: %s protocol %q already declared by connector #%d",
+					i, m.Connectors[i].Type, p, j)
+			}
+			seen[k] = i
+		}
+
 	}
 
 	// Windows really wants executables to end with .exe

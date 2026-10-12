@@ -367,6 +367,41 @@ func TestManifestConnectorProtocols(t *testing.T) {
 	}
 }
 
+func TestManifestProtocolOwners(t *testing.T) {
+	tests := []struct {
+		name       string
+		connectors string
+		wantErr    string
+	}{
+		{"same protocol, different types",
+			`[{type: importer, executable: a, protocols: [s3]},
+			  {type: exporter, executable: b, protocols: [s3]},
+			  {type: storage, executable: c, protocols: [s3]}]`, ""},
+		{"same type, different protocols",
+			`[{type: importer, executable: a, protocols: [k8s]},
+			  {type: importer, executable: a, protocols: [k8s+pvc]}]`, ""},
+		{"same type and protocol",
+			`[{type: importer, executable: a, protocols: [s3]},
+			  {type: importer, executable: b, protocols: [gcs, s3]}]`,
+			`connector #1: importer protocol "s3" already declared by connector #0`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var m Manifest
+			err := m.Parse(strings.NewReader("name: s3\nconnectors: " + tt.connectors + "\n"))
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Parse: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("Parse error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestManifestConnectorFlags(t *testing.T) {
 	c := ManifestConnector{LocationFlags: []string{"localfs", "file", "stream", "needack", "nomerge"}}
 	flags, err := c.Flags()
