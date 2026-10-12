@@ -394,6 +394,10 @@ func (p *Manager) FetchRecipe(name string, opts *FetchOptions) (*Recipe, error) 
 		opts = &FetchOptions{}
 	}
 
+	if err := checkName(name); err != nil {
+		return nil, err
+	}
+
 	const filename = "recipe.yaml"
 
 	repo, err := p.repoFor(opts.Edition)
