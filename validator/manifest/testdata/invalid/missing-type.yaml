@@ -2,4 +2,4 @@
 name: test
 display_name: Test
 description: Test integration.
-connectors: [{executable: x, protocols: [x]}]
+connectors: [{executable: x, protocols: [foo]}]

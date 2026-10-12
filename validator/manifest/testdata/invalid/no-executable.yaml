@@ -2,4 +2,4 @@
 name: test
 display_name: Test
 description: Test integration.
-connectors: [{type: importer, protocols: [x]}]
+connectors: [{type: importer, protocols: [foo]}]

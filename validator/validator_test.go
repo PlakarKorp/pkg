@@ -22,10 +22,10 @@ func manifestWith(connectors string) *fstest.MapFile {
 }
 
 const (
-	importerA = "  - {type: importer, executable: x, protocols: [x], validator: ./a.json}\n"
-	exporterA = "  - {type: exporter, executable: x, protocols: [x], validator: ./a.json}\n"
-	exporterB = "  - {type: exporter, executable: x, protocols: [x], validator: sub/b.json}\n"
-	noSchema  = "  - {type: storage, executable: x, protocols: [x]}\n"
+	importerA = "  - {type: importer, executable: x, protocols: [foo], validator: ./a.json}\n"
+	exporterA = "  - {type: exporter, executable: x, protocols: [foo], validator: ./a.json}\n"
+	exporterB = "  - {type: exporter, executable: x, protocols: [foo], validator: sub/b.json}\n"
+	noSchema  = "  - {type: storage, executable: x, protocols: [foo]}\n"
 )
 
 func TestValidateFS(t *testing.T) {
