@@ -1,42 +1,24 @@
 package pkg
 
 import (
-	"errors"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestPackageParseNameValid(t *testing.T) {
 	var p Package
-	if err := p.parseName("s3_v1.2.3_linux_amd64.ptar"); err != nil {
-		t.Fatalf("parseName: %v", err)
-	}
-	if p.Name != "s3" {
-		t.Errorf("Name = %q, want s3", p.Name)
-	}
-	if p.Version != "v1.2.3" {
-		t.Errorf("Version = %q, want v1.2.3", p.Version)
-	}
-	if p.OperatingSystem != "linux" {
-		t.Errorf("OperatingSystem = %q, want linux", p.OperatingSystem)
-	}
-	if p.Architecture != "amd64" {
-		t.Errorf("Architecture = %q, want amd64", p.Architecture)
-	}
+	require.NoError(t, p.parseName("s3_v1.2.3_linux_amd64.ptar"))
+	require.Equal(t, Package{Name: "s3", Version: "v1.2.3", OperatingSystem: "linux", Architecture: "amd64"}, p)
 }
 
 func TestPackageParseNameContainer(t *testing.T) {
 	// Container packages use OSContainer as their OS atom, keeping the
 	// regular 4-atom name format.
 	var p Package
-	if err := p.parseName("s3_v1.2.3_oci_amd64.ptar"); err != nil {
-		t.Fatalf("parseName: %v", err)
-	}
-	if p.OperatingSystem != OSContainer {
-		t.Errorf("OperatingSystem = %q, want oci", p.OperatingSystem)
-	}
-	if got, want := p.Filename(), "s3_v1.2.3_oci_amd64.ptar"; got != want {
-		t.Errorf("Filename = %q, want %q", got, want)
-	}
+	require.NoError(t, p.parseName("s3_v1.2.3_oci_amd64.ptar"))
+	require.Equal(t, OSContainer, p.OperatingSystem)
+	require.Equal(t, "s3_v1.2.3_oci_amd64.ptar", p.Filename())
 }
 
 func TestPackageParseNameErrors(t *testing.T) {
@@ -64,13 +46,7 @@ func TestPackageParseNameErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var p Package
-			err := p.parseName(tt.in)
-			if err == nil {
-				t.Fatalf("parseName(%q) = nil, want error", tt.in)
-			}
-			if !errors.Is(err, ErrBadPackageName) {
-				t.Errorf("parseName(%q) error = %v, want ErrBadPackageName", tt.in, err)
-			}
+			require.ErrorIs(t, p.parseName(tt.in), ErrBadPackageName)
 		})
 	}
 }
@@ -122,18 +98,18 @@ func TestPackageValidate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.pkg.Validate()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Validate() err = %v, wantErr = %v", err, tt.wantErr)
+			if tt.wantErr {
+				require.ErrorIs(t, err, ErrBadPackageName)
+				return
 			}
+			require.NoError(t, err)
 		})
 	}
 }
 
 func TestPackageFilename(t *testing.T) {
 	p := Package{Name: "s3", Version: "v1.2.3", OperatingSystem: "linux", Architecture: "amd64"}
-	if got, want := p.Filename(), "s3_v1.2.3_linux_amd64.ptar"; got != want {
-		t.Errorf("Filename() = %q, want %q", got, want)
-	}
+	require.Equal(t, "s3_v1.2.3_linux_amd64.ptar", p.Filename())
 }
 
 // Filename and parseName must round-trip: a name produced by Filename
@@ -142,10 +118,6 @@ func TestPackageFilenameRoundTrip(t *testing.T) {
 	orig := Package{Name: "my-plugin", Version: "v2.0.0-beta.1", OperatingSystem: "darwin", Architecture: "arm64"}
 
 	var got Package
-	if err := got.parseName(orig.Filename()); err != nil {
-		t.Fatalf("parseName(%q): %v", orig.Filename(), err)
-	}
-	if got != orig {
-		t.Errorf("round-trip mismatch: got %+v, want %+v", got, orig)
-	}
+	require.NoError(t, got.parseName(orig.Filename()))
+	require.Equal(t, orig, got)
 }

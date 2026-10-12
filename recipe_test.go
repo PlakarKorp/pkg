@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestRecipeParse(t *testing.T) {
@@ -16,60 +18,41 @@ version: v1.2.3
 repository: https://github.com/PlakarKorp/integrations
 `
 	var r Recipe
-	if err := r.Parse(strings.NewReader(doc)); err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
-	if r.Name != "s3" {
-		t.Errorf("Name = %q, want s3", r.Name)
-	}
-	if r.Version != "v1.2.3" {
-		t.Errorf("Version = %q, want v1.2.3", r.Version)
-	}
-	if r.Repository != "https://github.com/PlakarKorp/integrations" {
-		t.Errorf("Repository = %q", r.Repository)
-	}
+	require.NoError(t, r.Parse(strings.NewReader(doc)))
+	require.Equal(t, Recipe{
+		Name:       "s3",
+		Version:    "v1.2.3",
+		Repository: "https://github.com/PlakarKorp/integrations",
+	}, r)
 }
 
 func TestRecipeParseEmpty(t *testing.T) {
 	// Recipe.Parse does not wrap the decoder error (unlike Manifest.Parse),
 	// so an empty document surfaces the raw io.EOF from the yaml decoder.
 	var r Recipe
-	err := r.Parse(strings.NewReader(""))
-	if err != io.EOF {
-		t.Fatalf("Parse empty = %v, want io.EOF", err)
-	}
-	if r.Name != "" || r.Version != "" {
-		t.Errorf("expected zero recipe, got %+v", r)
-	}
+	require.ErrorIs(t, r.Parse(strings.NewReader("")), io.EOF)
+	require.Zero(t, r)
 }
 
 func TestRecipeParseInvalidYAML(t *testing.T) {
 	var r Recipe
-	if err := r.Parse(strings.NewReader("name: [unterminated")); err == nil {
-		t.Fatal("expected error decoding invalid yaml, got nil")
-	}
+	require.Error(t, r.Parse(strings.NewReader("name: [unterminated")))
 }
 
 func TestNewRecipeFromFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "recipe.yaml")
-	if err := os.WriteFile(path, []byte("name: ftp\nversion: v0.1.0\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, os.WriteFile(path, []byte("name: ftp\nversion: v0.1.0\n"), 0644))
 
 	r, err := NewRecipeFromFile(path)
-	if err != nil {
-		t.Fatalf("NewRecipeFromFile: %v", err)
-	}
-	if r.Name != "ftp" || r.Version != "v0.1.0" {
-		t.Errorf("got %+v", r)
-	}
+	require.NoError(t, err)
+	require.Equal(t, "ftp", r.Name)
+	require.Equal(t, "v0.1.0", r.Version)
 }
 
 func TestNewRecipeFromFileMissing(t *testing.T) {
-	if _, err := NewRecipeFromFile(filepath.Join(t.TempDir(), "nope.yaml")); err == nil {
-		t.Fatal("expected error for missing file")
-	}
+	_, err := NewRecipeFromFile(filepath.Join(t.TempDir(), "nope.yaml"))
+	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
 // Semver, Subdir and Tag are the monorepo helpers. A recent regression
@@ -123,15 +106,9 @@ func TestRecipeSemverSubdirTag(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &Recipe{Name: "x", Version: tt.version}
-			if got := r.Semver(); got != tt.wantSemver {
-				t.Errorf("Semver() = %q, want %q", got, tt.wantSemver)
-			}
-			if got := r.Subdir(); got != tt.wantSubdir {
-				t.Errorf("Subdir() = %q, want %q", got, tt.wantSubdir)
-			}
-			if got := r.Tag(); got != tt.wantTag {
-				t.Errorf("Tag() = %q, want %q", got, tt.wantTag)
-			}
+			require.Equal(t, tt.wantSemver, r.Semver(), "Semver()")
+			require.Equal(t, tt.wantSubdir, r.Subdir(), "Subdir()")
+			require.Equal(t, tt.wantTag, r.Tag(), "Tag()")
 		})
 	}
 }
@@ -142,11 +119,7 @@ func TestRecipePkgName(t *testing.T) {
 	t.Setenv("GOARCH", "arm64")
 
 	r := &Recipe{Name: "s3", Version: "backends/s3/v1.2.3"}
-	got := r.PkgName()
-	want := "s3_v1.2.3_linux_arm64.ptar"
-	if got != want {
-		t.Errorf("PkgName() = %q, want %q", got, want)
-	}
+	require.Equal(t, "s3_v1.2.3_linux_arm64.ptar", r.PkgName())
 }
 
 func TestRecipePkgNameDefaultsToRuntime(t *testing.T) {
@@ -154,9 +127,5 @@ func TestRecipePkgNameDefaultsToRuntime(t *testing.T) {
 	t.Setenv("GOARCH", "")
 
 	r := &Recipe{Name: "fs", Version: "v1.0.0"}
-	got := r.PkgName()
-	want := "fs_v1.0.0_" + runtime.GOOS + "_" + runtime.GOARCH + ".ptar"
-	if got != want {
-		t.Errorf("PkgName() = %q, want %q", got, want)
-	}
+	require.Equal(t, "fs_v1.0.0_"+runtime.GOOS+"_"+runtime.GOARCH+".ptar", r.PkgName())
 }

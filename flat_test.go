@@ -1,16 +1,14 @@
 package pkg
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
-	"slices"
-	"sort"
 	"strings"
 	"testing"
 
 	"github.com/PlakarKorp/kloset/kcontext"
+	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -25,28 +23,20 @@ func newTestFlatBackend(t *testing.T, opts *FlatBackendOptions) (*FlatBackend, s
 	kctx := kcontext.NewKContext()
 
 	be, err := NewFlatBackend(kctx, pkgdir, cachedir, opts)
-	if err != nil {
-		t.Fatalf("NewFlatBackend: %v", err)
-	}
+	require.NoError(t, err)
 	return be, pkgdir, cachedir
 }
 
 func TestNewFlatBackendCreatesDirs(t *testing.T) {
-	be, pkgdir, cachedir := newTestFlatBackend(t, nil)
-	_ = be
-	for _, d := range []string{pkgdir, cachedir} {
-		if fi, err := os.Stat(d); err != nil || !fi.IsDir() {
-			t.Errorf("expected directory %q to exist: err=%v", d, err)
-		}
-	}
+	_, pkgdir, cachedir := newTestFlatBackend(t, nil)
+	require.DirExists(t, pkgdir)
+	require.DirExists(t, cachedir)
 }
 
 // touch creates an empty file with the given name inside pkgdir.
 func touch(t *testing.T, dir, name string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(dir, name), nil, 0644); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), nil, 0644))
 }
 
 func TestFlatBackendList(t *testing.T) {
@@ -63,32 +53,19 @@ func TestFlatBackendList(t *testing.T) {
 	// listing everything
 	var got []string
 	for p, err := range be.List("") {
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		got = append(got, p.Name+"_"+p.Version)
 	}
-	sort.Strings(got)
-	want := []string{"ftp_v0.1.0", "s3_v1.0.0", "s3_v2.0.0"}
-	if !slices.Equal(got, want) {
-		t.Errorf("List(\"\") = %v, want %v", got, want)
-	}
+	require.ElementsMatch(t, []string{"ftp_v0.1.0", "s3_v1.0.0", "s3_v2.0.0"}, got)
 
 	// filtered by name
 	var s3 []string
 	for p, err := range be.List("s3") {
-		if err != nil {
-			t.Fatal(err)
-		}
-		if p.Name != "s3" {
-			t.Errorf("filtered list returned %q", p.Name)
-		}
+		require.NoError(t, err)
+		require.Equal(t, "s3", p.Name)
 		s3 = append(s3, p.Version)
 	}
-	sort.Strings(s3)
-	if !slices.Equal(s3, []string{"v1.0.0", "v2.0.0"}) {
-		t.Errorf("List(s3) = %v", s3)
-	}
+	require.ElementsMatch(t, []string{"v1.0.0", "v2.0.0"}, s3)
 }
 
 func TestFlatBackendListEarlyStop(t *testing.T) {
@@ -101,28 +78,20 @@ func TestFlatBackendListEarlyStop(t *testing.T) {
 
 	count := 0
 	for _, err := range be.List("") {
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		count++
 		break // consumer stops early; iterator must respect the false yield
 	}
-	if count != 1 {
-		t.Errorf("consumed %d items after break, want 1", count)
-	}
+	require.Equal(t, 1, count)
 }
 
 func TestFlatBackendListMissingDir(t *testing.T) {
 	root := t.TempDir()
 	kctx := kcontext.NewKContext()
 	be, err := NewFlatBackend(kctx, filepath.Join(root, "pkgs"), filepath.Join(root, "cache"), &FlatBackendOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	// Remove the pkgdir out from under the backend.
-	if err := os.RemoveAll(be.pkgdir); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, os.RemoveAll(be.pkgdir))
 
 	var gotErr error
 	for _, err := range be.List("") {
@@ -131,9 +100,7 @@ func TestFlatBackendListMissingDir(t *testing.T) {
 			break
 		}
 	}
-	if gotErr == nil {
-		t.Fatal("expected error listing a missing pkgdir")
-	}
+	require.Error(t, gotErr)
 }
 
 // loadmanifest validates the executable path stays within the manifest's
@@ -142,9 +109,7 @@ func TestLoadManifestRejectsPathTraversal(t *testing.T) {
 	be, _, cachedir := newTestFlatBackend(t, nil)
 
 	mdir := filepath.Join(cachedir, "evil")
-	if err := os.MkdirAll(mdir, 0755); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, os.MkdirAll(mdir, 0755))
 	const manifest = `
 name: evil
 connectors:
@@ -153,22 +118,17 @@ connectors:
     protocols: [evil]
 `
 	mpath := filepath.Join(mdir, "manifest.yaml")
-	if err := os.WriteFile(mpath, []byte(manifest), 0644); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, os.WriteFile(mpath, []byte(manifest), 0644))
 
-	if _, err := be.loadmanifest(mpath, pkgOf(t, "evil")); err == nil {
-		t.Fatal("loadmanifest accepted an executable path escaping the manifest dir")
-	}
+	_, err := be.loadmanifest(mpath, pkgOf(t, "evil"))
+	require.ErrorContains(t, err, "escapes the integration directory")
 }
 
 func TestLoadManifestAcceptsValidExecutable(t *testing.T) {
 	be, _, cachedir := newTestFlatBackend(t, nil)
 
 	mdir := filepath.Join(cachedir, "good")
-	if err := os.MkdirAll(mdir, 0755); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, os.MkdirAll(mdir, 0755))
 	const manifest = `
 name: good
 connectors:
@@ -181,26 +141,18 @@ connectors:
       - localfs
 `
 	mpath := filepath.Join(mdir, "manifest.yaml")
-	if err := os.WriteFile(mpath, []byte(manifest), 0644); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, os.WriteFile(mpath, []byte(manifest), 0644))
 
 	m, err := be.loadmanifest(mpath, pkgOf(t, "good"))
-	if err != nil {
-		t.Fatalf("loadmanifest: %v", err)
-	}
-	if m.Name != "good" {
-		t.Errorf("Name = %q", m.Name)
-	}
+	require.NoError(t, err)
+	require.Equal(t, "good", m.Name)
 }
 
 func TestLoadManifestRejectsBadFlags(t *testing.T) {
 	be, _, cachedir := newTestFlatBackend(t, nil)
 
 	mdir := filepath.Join(cachedir, "badflag")
-	if err := os.MkdirAll(mdir, 0755); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, os.MkdirAll(mdir, 0755))
 	const manifest = `
 name: badflag
 connectors:
@@ -210,13 +162,10 @@ connectors:
       - notarealflag
 `
 	mpath := filepath.Join(mdir, "manifest.yaml")
-	if err := os.WriteFile(mpath, []byte(manifest), 0644); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, os.WriteFile(mpath, []byte(manifest), 0644))
 
-	if _, err := be.loadmanifest(mpath, pkgOf(t, "badflag")); err == nil {
-		t.Fatal("loadmanifest accepted an unknown location flag")
-	}
+	_, err := be.loadmanifest(mpath, pkgOf(t, "badflag"))
+	require.ErrorContains(t, err, "notarealflag")
 }
 
 func TestFlatBackendUnloadRemovesFiles(t *testing.T) {
@@ -231,32 +180,20 @@ func TestFlatBackendUnloadRemovesFiles(t *testing.T) {
 
 	// Stage the ptar file and an extracted directory as Load would.
 	ptarPath := filepath.Join(pkgdir, pkg.Filename())
-	if err := os.WriteFile(ptarPath, []byte("data"), 0644); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, os.WriteFile(ptarPath, []byte("data"), 0644))
 	extracted := filepath.Join(cachedir, "s3_v1.0.0_"+runtime.GOOS+"_"+runtime.GOARCH)
-	if err := os.MkdirAll(extracted, 0755); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, os.MkdirAll(extracted, 0755))
 
 	// No unloadhook, so Unload should not need a manifest.
-	if err := be.Unload(pkg); err != nil {
-		t.Fatalf("Unload: %v", err)
-	}
-	if _, err := os.Stat(ptarPath); !os.IsNotExist(err) {
-		t.Errorf("ptar file still exists after Unload: %v", err)
-	}
-	if _, err := os.Stat(extracted); !os.IsNotExist(err) {
-		t.Errorf("extracted dir still exists after Unload: %v", err)
-	}
+	require.NoError(t, be.Unload(pkg))
+	require.NoFileExists(t, ptarPath)
+	require.NoDirExists(t, extracted)
 }
 
 func TestFlatBackendUnloadHook(t *testing.T) {
-	var called bool
 	var gotPkg *Package
 	be, pkgdir, cachedir := newTestFlatBackend(t, &FlatBackendOptions{
 		UnloadHook: func(m *Manifest, p *Package) {
-			called = true
 			gotPkg = p
 		},
 	})
@@ -267,13 +204,9 @@ func TestFlatBackendUnloadHook(t *testing.T) {
 		OperatingSystem: runtime.GOOS,
 		Architecture:    runtime.GOARCH,
 	}
-	if err := os.WriteFile(filepath.Join(pkgdir, pkg.Filename()), []byte("data"), 0644); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, os.WriteFile(filepath.Join(pkgdir, pkg.Filename()), []byte("data"), 0644))
 	extracted := filepath.Join(cachedir, "s3_v1.0.0_"+runtime.GOOS+"_"+runtime.GOARCH)
-	if err := os.MkdirAll(extracted, 0755); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, os.MkdirAll(extracted, 0755))
 
 	manifest, err := yaml.Marshal(&Manifest{
 		Name: "s3",
@@ -285,23 +218,12 @@ func TestFlatBackendUnloadHook(t *testing.T) {
 			SubClass:   ResourceSubClassS3,
 		}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(extracted, "manifest.yaml"), manifest, 0644))
 
-	if err := os.WriteFile(filepath.Join(extracted, "manifest.yaml"), manifest, 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := be.Unload(pkg); err != nil {
-		t.Fatalf("Unload: %v", err)
-	}
-	if !called {
-		t.Fatal("unload hook was not called")
-	}
-	if gotPkg == nil || gotPkg.Name != "s3" {
-		t.Errorf("unload hook got package %+v", gotPkg)
-	}
+	require.NoError(t, be.Unload(pkg))
+	require.NotNil(t, gotPkg, "unload hook was not called")
+	require.Equal(t, "s3", gotPkg.Name)
 }
 
 func TestFlatBackendUnloadHookManifestMissing(t *testing.T) {
@@ -314,27 +236,19 @@ func TestFlatBackendUnloadHookManifestMissing(t *testing.T) {
 		OperatingSystem: runtime.GOOS,
 		Architecture:    runtime.GOARCH,
 	}
-	if err := os.WriteFile(filepath.Join(pkgdir, pkg.Filename()), []byte("data"), 0644); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, os.WriteFile(filepath.Join(pkgdir, pkg.Filename()), []byte("data"), 0644))
 
 	// With an unloadhook but no extracted manifest, Unload should report
 	// the missing manifest rather than silently succeed.
-	if err := be.Unload(pkg); err == nil {
-		t.Fatal("expected error when unloadhook set but manifest missing")
-	}
+	require.ErrorIs(t, be.Unload(pkg), os.ErrNotExist)
 }
 
 // unload tolerates an already-missing extracted directory.
 func TestFlatBackendUnloadIdempotent(t *testing.T) {
 	be, pkgdir, _ := newTestFlatBackend(t, nil)
 	ptarPath := filepath.Join(pkgdir, "s3_v1.0.0_"+runtime.GOOS+"_"+runtime.GOARCH+".ptar")
-	if err := os.WriteFile(ptarPath, []byte("data"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := be.unload(ptarPath, filepath.Join(t.TempDir(), "does-not-exist")); err != nil {
-		t.Errorf("unload with missing extracted dir: %v", err)
-	}
+	require.NoError(t, os.WriteFile(ptarPath, []byte("data"), 0644))
+	require.NoError(t, be.unload(ptarPath, filepath.Join(t.TempDir(), "does-not-exist")))
 }
 
 // stageExtracted installs pkg with an already extracted manifest, which
@@ -343,12 +257,8 @@ func stageExtracted(t *testing.T, pkgdir, cachedir string, pkg *Package, manifes
 	t.Helper()
 	touch(t, pkgdir, pkg.Filename())
 	extracted := filepath.Join(cachedir, strings.TrimSuffix(pkg.Filename(), ".ptar"))
-	if err := os.MkdirAll(extracted, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(extracted, "manifest.yaml"), []byte(manifest), 0644); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, os.MkdirAll(extracted, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(extracted, "manifest.yaml"), []byte(manifest), 0644))
 }
 
 func TestFlatBackendLoadAllManifestName(t *testing.T) {
@@ -373,15 +283,13 @@ func TestFlatBackendLoadAllManifestName(t *testing.T) {
 				"name: "+tt.manifest+"\nconnectors: [{type: importer, executable: tool, protocols: [s3]}]\n")
 
 			err := be.LoadAll()
-			if !errors.Is(err, tt.wantErr) {
-				t.Fatalf("LoadAll error = %v, want %v", err, tt.wantErr)
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				require.Empty(t, loaded, "load hook called")
+				return
 			}
-			if tt.wantErr == nil && len(loaded) != 1 {
-				t.Errorf("load hook called for %v, want [s3]", loaded)
-			}
-			if tt.wantErr != nil && len(loaded) != 0 {
-				t.Errorf("load hook called for %v, want none", loaded)
-			}
+			require.NoError(t, err)
+			require.Equal(t, []string{"s3"}, loaded)
 		})
 	}
 }
@@ -389,7 +297,7 @@ func TestFlatBackendLoadAllManifestName(t *testing.T) {
 func TestFlatBackendLoadAllConnectorKind(t *testing.T) {
 	const (
 		native    = "{type: importer, executable: tool, protocols: [s3]}"
-		container = "{type: exporter, image_id: "+testImageID+", protocols: [s3]}"
+		container = "{type: exporter, image_id: " + testImageID + ", protocols: [s3]}"
 	)
 	tests := []struct {
 		name       string
@@ -410,9 +318,12 @@ func TestFlatBackendLoadAllConnectorKind(t *testing.T) {
 			pkg.OperatingSystem = tt.os
 			stageExtracted(t, pkgdir, cachedir, pkg, "name: s3\nconnectors: "+tt.connectors+"\n")
 
-			if err := be.LoadAll(); !errors.Is(err, tt.wantErr) {
-				t.Fatalf("LoadAll error = %v, want %v", err, tt.wantErr)
+			err := be.LoadAll()
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				return
 			}
+			require.NoError(t, err)
 		})
 	}
 }
@@ -429,19 +340,11 @@ func TestFlatBackendListRemovesStaleFetches(t *testing.T) {
 
 	var names []string
 	for pkg, err := range be.List("") {
-		if err != nil {
-			t.Fatalf("List: %v", err)
-		}
+		require.NoError(t, err)
 		names = append(names, pkg.Name)
 	}
-	if !slices.Equal(names, []string{"s3"}) {
-		t.Errorf("List = %v, want [s3]", names)
-	}
+	require.Equal(t, []string{"s3"}, names)
 
-	if _, err := os.Stat(filepath.Join(pkgdir, "fetch-plugin-1234")); !os.IsNotExist(err) {
-		t.Errorf("stale fetch in pkgdir not removed: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(cwd, "fetch-plugin-1234")); err != nil {
-		t.Errorf("file in the working directory touched: %v", err)
-	}
+	require.NoFileExists(t, filepath.Join(pkgdir, "fetch-plugin-1234"), "stale fetch in pkgdir not removed")
+	require.FileExists(t, filepath.Join(cwd, "fetch-plugin-1234"), "file in the working directory touched")
 }

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func testPkg(name string) *Package {
@@ -26,22 +28,12 @@ func TestSignatureRoundTrip(t *testing.T) {
 
 	// Load extracts the ptar, which a fake artifact cannot satisfy, so the
 	// sidecar is written directly to exercise the retrieval path.
-	if err := os.WriteFile(filepath.Join(pkgdir, pkg.Filename()), []byte("artifact"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.WriteFile(be.sigpath(pkg), sig, 0644); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, os.WriteFile(filepath.Join(pkgdir, pkg.Filename()), []byte("artifact"), 0644))
+	require.NoError(t, os.WriteFile(be.sigpath(pkg), sig, 0644))
 
 	got, err := be.Signature(pkg)
-	if err != nil {
-		t.Fatalf("Signature: %v", err)
-	}
-
-	if string(got) != string(sig) {
-		t.Errorf("Signature returned %q, want %q", got, sig)
-	}
+	require.NoError(t, err)
+	require.Equal(t, sig, got)
 }
 
 // A package installed without a signature must report nil rather than an
@@ -50,13 +42,8 @@ func TestSignatureAbsentIsNotAnError(t *testing.T) {
 	be, _, _ := newTestFlatBackend(t, nil)
 
 	got, err := be.Signature(testPkg("s3"))
-	if err != nil {
-		t.Fatalf("Signature: %v", err)
-	}
-
-	if got != nil {
-		t.Errorf("expected nil for an unsigned package, got %q", got)
-	}
+	require.NoError(t, err)
+	require.Nil(t, got)
 }
 
 // Uninstalling must take the signature with it: a later install of the same
@@ -67,21 +54,10 @@ func TestUnloadRemovesSignature(t *testing.T) {
 	pkg := testPkg("s3")
 	pkgfile := filepath.Join(pkgdir, pkg.Filename())
 
-	if err := os.WriteFile(pkgfile, []byte("artifact"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.WriteFile(be.sigpath(pkg), []byte("sig"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := be.unload(pkgfile, ""); err != nil {
-		t.Fatalf("unload: %v", err)
-	}
-
-	if _, err := os.Stat(be.sigpath(pkg)); !os.IsNotExist(err) {
-		t.Errorf("signature survived unload: %v", err)
-	}
+	require.NoError(t, os.WriteFile(pkgfile, []byte("artifact"), 0644))
+	require.NoError(t, os.WriteFile(be.sigpath(pkg), []byte("sig"), 0644))
+	require.NoError(t, be.unload(pkgfile, ""))
+	require.NoFileExists(t, be.sigpath(pkg))
 }
 
 // The sidecar sits in the plugin directory, so List must not mistake it for
@@ -95,13 +71,8 @@ func TestListIgnoresSignatures(t *testing.T) {
 
 	var got []string
 	for p, err := range be.List("") {
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		got = append(got, p.Filename())
 	}
-
-	if len(got) != 1 || got[0] != pkg.Filename() {
-		t.Errorf("List returned %v, want just %s", got, pkg.Filename())
-	}
+	require.Equal(t, []string{pkg.Filename()}, got)
 }

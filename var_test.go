@@ -1,6 +1,10 @@
 package pkg
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestResourceClassIsValid(t *testing.T) {
 	valid := []ResourceClass{
@@ -22,14 +26,9 @@ func TestResourceClassIsValid(t *testing.T) {
 		ResourceClassService,
 	}
 	for _, c := range valid {
-		if !c.IsValid() {
-			t.Errorf("ResourceClass(%q).IsValid() = false, want true", c)
-		}
+		require.True(t, c.IsValid(), "ResourceClass(%q).IsValid()", c)
 	}
-
-	if ResourceClass("bogus").IsValid() {
-		t.Error(`ResourceClass("bogus").IsValid() = true, want false`)
-	}
+	require.False(t, ResourceClass("bogus").IsValid())
 }
 
 func TestResourceSubClassIsValid(t *testing.T) {
@@ -50,14 +49,9 @@ func TestResourceSubClassIsValid(t *testing.T) {
 		ResourceSubClassSFTP,
 	}
 	for _, c := range valid {
-		if !c.IsValid() {
-			t.Errorf("ResourceSubClass(%q).IsValid() = false, want true", c)
-		}
+		require.True(t, c.IsValid(), "ResourceSubClass(%q).IsValid()", c)
 	}
-
-	if ResourceSubClass("bogus").IsValid() {
-		t.Error(`ResourceSubClass("bogus").IsValid() = true, want false`)
-	}
+	require.False(t, ResourceSubClass("bogus").IsValid())
 }
 
 func TestConnectorTypeIsValid(t *testing.T) {
@@ -69,14 +63,9 @@ func TestConnectorTypeIsValid(t *testing.T) {
 		ConnectorTypeInventory,
 	}
 	for _, c := range valid {
-		if !c.IsValid() {
-			t.Errorf("ConnectorType(%q).IsValid() = false, want true", c)
-		}
+		require.True(t, c.IsValid(), "ConnectorType(%q).IsValid()", c)
 	}
-
-	if ConnectorType("bogus").IsValid() {
-		t.Error(`ConnectorType("bogus").IsValid() = true, want false`)
-	}
+	require.False(t, ConnectorType("bogus").IsValid())
 }
 
 func TestIsSubClassOf(t *testing.T) {
@@ -100,20 +89,14 @@ func TestIsSubClassOf(t *testing.T) {
 		{ResourceSubClassS3, ResourceClass("bogus"), false}, // unknown parent
 	}
 	for _, tt := range tests {
-		if got := tt.sub.IsSubClassOf(tt.parent); got != tt.want {
-			t.Errorf("%q.IsSubClassOf(%q) = %v, want %v", tt.sub, tt.parent, got, tt.want)
-		}
+		require.Equal(t, tt.want, tt.sub.IsSubClassOf(tt.parent), "%q.IsSubClassOf(%q)", tt.sub, tt.parent)
 	}
 }
 
 func TestGetClassTree(t *testing.T) {
 	tree := GetClassTree()
-	if tree == nil {
-		t.Fatal("GetClassTree() returned nil")
-	}
-	if _, ok := tree[ResourceClassObjectStorage]; !ok {
-		t.Error("class tree missing object-storage")
-	}
+	require.NotNil(t, tree)
+	require.Contains(t, tree, ResourceClassObjectStorage)
 }
 
 // Every class that appears as a key in the class tree must itself be a
@@ -122,16 +105,10 @@ func TestGetClassTree(t *testing.T) {
 // added to the tree but not to the validity slice (and vice versa).
 func TestClassTreeConsistency(t *testing.T) {
 	for class, subs := range GetClassTree() {
-		if !class.IsValid() {
-			t.Errorf("class %q is a key in the tree but IsValid() = false", class)
-		}
+		require.True(t, class.IsValid(), "class %q is a key in the tree", class)
 		for _, sub := range subs {
-			if !sub.IsValid() {
-				t.Errorf("subclass %q (under %q) IsValid() = false", sub, class)
-			}
-			if !sub.IsSubClassOf(class) {
-				t.Errorf("%q listed under %q but IsSubClassOf() = false", sub, class)
-			}
+			require.True(t, sub.IsValid(), "subclass %q under %q", sub, class)
+			require.True(t, sub.IsSubClassOf(class), "%q listed under %q", sub, class)
 		}
 	}
 }
