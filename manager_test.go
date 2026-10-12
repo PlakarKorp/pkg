@@ -379,6 +379,28 @@ func TestFetchRecipe(t *testing.T) {
 	}
 }
 
+func TestFetchRecipeRejectsBadName(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request for %q", r.URL.Path)
+		http.Error(w, "unexpected", http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	m, _ := New(newFakeBackend(), &Options{DistURL: srv.URL})
+	for _, name := range []string{"", "..", "../s3", "s3/../../x", "-rf", "s3_extra"} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := m.FetchRecipe(name, nil); !errors.Is(err, ErrBadPackageName) {
+				t.Errorf("FetchRecipe(%q) error = %v, want ErrBadPackageName", name, err)
+			}
+		})
+	}
+
+	// Add derives the name from its target on the implicit fetch path.
+	if err := m.Add("..", &AddOptions{ImplicitFetch: true}); !errors.Is(err, ErrBadPackageName) {
+		t.Errorf("Add(\"..\") error = %v, want ErrBadPackageName", err)
+	}
+}
+
 func TestFetchRecipeWithoutDistURL(t *testing.T) {
 	m, _ := New(newFakeBackend(), nil)
 	_, err := m.FetchRecipe("s3", nil)
