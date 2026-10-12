@@ -136,6 +136,10 @@ func (m *Manifest) Validate() error {
 	if m.Contact != "" && !isContact(m.Contact) {
 		return fmt.Errorf("contact %q is neither an email address nor a URL", m.Contact)
 	}
+	// inner spaces are ok: consider "MIT OR Apache-2.0"
+	if m.License != "" && (m.License != strings.TrimSpace(m.License) || strings.ContainsAny(m.License, "\r\n")) {
+		return fmt.Errorf("license %q must be a single line without surrounding whitespace", m.License)
+	}
 	return nil
 }
 
