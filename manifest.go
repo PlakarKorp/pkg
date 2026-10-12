@@ -257,5 +257,20 @@ func (conn *ManifestConnector) Validate() error {
 		seen[p] = true
 	}
 
+	seen = make(map[string]bool)
+	for _, f := range conn.ExtraFiles {
+		if strings.TrimSpace(f) == "" {
+			return fmt.Errorf("extra_files entry is blank")
+		}
+		if !filepath.IsLocal(f) {
+			return fmt.Errorf("extra_files %q escapes the integration directory", f)
+		}
+		clean := filepath.Clean(f)
+		if seen[clean] {
+			return fmt.Errorf("extra_files %q listed twice", f)
+		}
+		seen[clean] = true
+	}
+
 	return nil
 }

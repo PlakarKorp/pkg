@@ -399,6 +399,38 @@ func TestManifestConnectorExecutable(t *testing.T) {
 	}
 }
 
+func TestManifestConnectorExtraFiles(t *testing.T) {
+	tests := []struct {
+		name    string
+		files   []string
+		wantErr string
+	}{
+		{"none", nil, ""},
+		{"several", []string{"icon.png", "./lib/helper.so"}, ""},
+		{"blank", []string{" "}, "extra_files entry is blank"},
+		{"parent", []string{"../secret"}, `extra_files "../secret" escapes the integration directory`},
+		{"inner parent", []string{"lib/../../secret"}, `extra_files "lib/../../secret" escapes the integration directory`},
+		{"absolute", []string{"/etc/passwd"}, `extra_files "/etc/passwd" escapes the integration directory`},
+		{"duplicate", []string{"icon.png", "lib.so", "icon.png"}, `extra_files "icon.png" listed twice`},
+		{"duplicate after cleaning", []string{"icon.png", "./icon.png"}, `extra_files "./icon.png" listed twice`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := ManifestConnector{Type: "importer", Executable: "tool", Protocols: []string{"s3"}, ExtraFiles: tt.files}
+			err := c.Validate()
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("Validate error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestManifestProtocolOwners(t *testing.T) {
 	tests := []struct {
 		name       string
