@@ -95,12 +95,23 @@ func TestValidateFlat(t *testing.T) {
 			"if": {"properties": {"m": {"const": "a"}}}, "else": {"properties": {"o": {"type": "object"}}}}`, ErrNested},
 		{"object behind a root ref", `{"type": "object", "$ref": "#/$defs/base",
 			"$defs": {"base": {"properties": {"o": {"type": "object"}}}}}`, ErrNested},
+		{"object in a root dependentSchemas", `{"type": "object", "properties": {"a": {"type": "string"}},
+			"dependentSchemas": {"a": {"properties": {"o": {"type": "object"}}}}}`, ErrNested},
+		{"object in a draft-07 root dependencies", `{"$schema": "http://json-schema.org/draft-07/schema#", "type": "object",
+			"properties": {"a": {"type": "string"}}, "dependencies": {"a": {"properties": {"o": {"type": "object"}}}}}`, ErrNested},
+		{"names in a draft-07 root dependencies", `{"$schema": "http://json-schema.org/draft-07/schema#", "type": "object",
+			"properties": {"a": {"type": "string"}, "b": {"type": "string"}}, "dependencies": {"a": ["b"]}}`, nil},
+		{"object unevaluated properties", `{"type": "object", "unevaluatedProperties": {"type": "object"}}`, ErrNested},
+		{"scalar unevaluated properties", `{"type": "object", "unevaluatedProperties": {"type": "string"}}`, nil},
+		{"closed by unevaluated properties", `{"type": "object", "properties": {"a": {"type": "string"}},
+			"unevaluatedProperties": false}`, nil},
 
 		// Structure keywords on a scalar still declare nested fields.
 		{"properties on a scalar", `{"type": "object", "properties": {"s": {"type": "string", "properties": {"x": {"type": "string"}}}}}`, ErrNested},
 		{"pattern properties on a scalar", `{"type": "object", "properties": {"s": {"type": "string", "patternProperties": {"^x": {}}}}}`, ErrNested},
 		{"additional properties on a scalar", `{"type": "object", "properties": {"s": {"type": "string", "additionalProperties": {"type": "string"}}}}`, ErrNested},
 		{"prefix items on a scalar", `{"type": "object", "properties": {"s": {"type": "string", "prefixItems": [{"type": "string"}]}}}`, ErrNested},
+		{"unevaluated properties on a scalar", `{"type": "object", "properties": {"s": {"type": "string", "unevaluatedProperties": {"type": "string"}}}}`, ErrNested},
 		{"draft-07 items on a scalar", `{"$schema": "http://json-schema.org/draft-07/schema#", "type": "object",
 			"properties": {"s": {"type": "string", "items": {"type": "string"}}}}`, ErrNested},
 	}
@@ -113,6 +124,31 @@ func TestValidateFlat(t *testing.T) {
 			} else {
 				require.ErrorIs(t, err, tt.want)
 			}
+		})
+	}
+}
+
+func TestValidateRefusesDynamicRefs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		doc  string
+	}{
+		{"root dynamicRef", `{"type": "object", "$dynamicRef": "#d",
+			"$defs": {"d": {"$dynamicAnchor": "d", "properties": {"s": {"type": "string"}}}}}`},
+		// The static target is a string, but the outer anchor wins at evaluation.
+		{"dynamicRef resolved by scope", `{"type": "object", "$dynamicAnchor": "d",
+			"properties": {"o": {"$ref": "inner"}},
+			"$defs": {"inner": {"$id": "inner", "$dynamicAnchor": "d",
+				"anyOf": [{"type": "string"}, {"$dynamicRef": "#d"}]}}}`},
+		{"recursiveRef", `{"$schema": "https://json-schema.org/draft/2019-09/schema", "type": "object",
+			"allOf": [{"properties": {"o": {"$recursiveRef": "#"}}}]}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.ErrorIs(t, ReadAndValidate(strings.NewReader(tt.doc)), ErrDynamicRef)
 		})
 	}
 }
