@@ -110,7 +110,7 @@ func (m *Manifest) Parse(rd io.Reader) error {
 
 	for i := range m.Connectors {
 		if err := m.Connectors[i].Validate(); err != nil {
-			return fmt.Errorf("connector #%b: %w", i, err)
+			return fmt.Errorf("connector #%d: %w", i, err)
 		}
 
 		for _, p := range m.Connectors[i].Protocols {
