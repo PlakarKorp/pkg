@@ -13,6 +13,7 @@ var (
 	ErrRootNotObject = errors.New("root type must be object")
 	ErrUntyped       = errors.New("property must declare a type")
 	ErrNested        = errors.New("nested fields are not allowed")
+	ErrDynamicRef    = errors.New("$dynamicRef and $recursiveRef are not allowed")
 )
 
 // checkFlat checks that schema does not contain nested objects
@@ -50,6 +51,9 @@ func checkObject(s *js.Schema, objects, values visited) error {
 	if !objects.first(s) {
 		return nil
 	}
+	if err := checkStaticRefs(s); err != nil {
+		return err
+	}
 	for _, p := range s.Properties {
 		if err := checkValue(p, values); err != nil {
 			return err
@@ -65,6 +69,11 @@ func checkObject(s *js.Schema, objects, values visited) error {
 			return err
 		}
 	}
+	if s.UnevaluatedProperties != nil {
+		if err := checkValue(s.UnevaluatedProperties, values); err != nil {
+			return err
+		}
+	}
 	for _, sub := range sameInstance(s) {
 		if err := checkObject(sub, objects, values); err != nil {
 			return err
@@ -77,6 +86,9 @@ func checkObject(s *js.Schema, objects, values visited) error {
 func checkValue(s *js.Schema, values visited) error {
 	if !values.first(s) {
 		return nil
+	}
+	if err := checkStaticRefs(s); err != nil {
+		return err
 	}
 	if s.Types != nil {
 		for _, t := range s.Types.ToStrings() {
@@ -96,19 +108,38 @@ func checkValue(s *js.Schema, values visited) error {
 	return nil
 }
 
+// checkStaticRefs refuses refs resolved at evaluation time: their target
+// depends on the dynamic scope, which a static walk cannot follow.
+func checkStaticRefs(s *js.Schema) error {
+	if s.DynamicRef != nil || s.RecursiveRef != nil {
+		return fmt.Errorf("%s: %w", pointer(s), ErrDynamicRef)
+	}
+	return nil
+}
+
 // sameInstance returns the subschemas that apply to the same instance as s.
 func sameInstance(s *js.Schema) []*js.Schema {
 	subs := []*js.Schema{s.Ref, s.Not, s.If, s.Then, s.Else}
 	subs = append(subs, s.AllOf...)
 	subs = append(subs, s.AnyOf...)
-	return append(subs, s.OneOf...)
+	subs = append(subs, s.OneOf...)
+	for _, d := range s.DependentSchemas {
+		subs = append(subs, d)
+	}
+	// Draft-07 dependencies hold either a schema or a list of names.
+	for _, d := range s.Dependencies {
+		if d, ok := d.(*js.Schema); ok {
+			subs = append(subs, d)
+		}
+	}
+	return subs
 }
 
 // hasStructure reports whether s describes the members of an object or the
 // elements of an array.
 func hasStructure(s *js.Schema) bool {
 	_, additional := s.AdditionalProperties.(*js.Schema)
-	return len(s.Properties) > 0 || len(s.PatternProperties) > 0 || additional ||
+	return len(s.Properties) > 0 || len(s.PatternProperties) > 0 || additional || s.UnevaluatedProperties != nil ||
 		s.Items != nil || s.Items2020 != nil || len(s.PrefixItems) > 0
 }
 
