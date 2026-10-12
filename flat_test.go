@@ -416,3 +416,32 @@ func TestFlatBackendLoadAllConnectorKind(t *testing.T) {
 		})
 	}
 }
+
+// List removes leftover fetch-plugin-* files from pkgdir, and only from there.
+func TestFlatBackendListRemovesStaleFetches(t *testing.T) {
+	be, pkgdir, _ := newTestFlatBackend(t, nil)
+	touch(t, pkgdir, "fetch-plugin-1234")
+	touch(t, pkgdir, pkgOf(t, "s3").Filename())
+
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+	touch(t, cwd, "fetch-plugin-1234")
+
+	var names []string
+	for pkg, err := range be.List("") {
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		names = append(names, pkg.Name)
+	}
+	if !slices.Equal(names, []string{"s3"}) {
+		t.Errorf("List = %v, want [s3]", names)
+	}
+
+	if _, err := os.Stat(filepath.Join(pkgdir, "fetch-plugin-1234")); !os.IsNotExist(err) {
+		t.Errorf("stale fetch in pkgdir not removed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cwd, "fetch-plugin-1234")); err != nil {
+		t.Errorf("file in the working directory touched: %v", err)
+	}
+}
