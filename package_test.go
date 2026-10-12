@@ -54,6 +54,7 @@ func TestPackageParseNameErrors(t *testing.T) {
 		{"version without v prefix", "s3_1.2.3_linux_amd64.ptar"},
 		{"invalid version", "s3_notaversion_linux_amd64.ptar"},
 		{"invalid char in name", "s3$_v1.2.3_linux_amd64.ptar"},
+		{"name starting with hyphen", "-rf_v1.2.3_linux_amd64.ptar"},
 		{"invalid char in os", "s3_v1.2.3_lin/ux_amd64.ptar"},
 		{"invalid char in arch", "s3_v1.2.3_linux_amd-64.ptar"},
 	}
