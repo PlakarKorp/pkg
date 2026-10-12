@@ -139,6 +139,17 @@ func TestManifestFields(t *testing.T) {
 		{"name with non-ascii", "name: café\n", `name: invalid package name "café"`},
 		{"blank display_name", "name: s3\ndisplay_name: \"\\t\"\n", "display_name is blank"},
 		{"blank description", "name: s3\ndescription: \"\\n \"\n", "description is blank"},
+		{"https homepage", "name: s3\nhomepage: https://github.com/PlakarKorp/integrations/tree/main/s3\n", ""},
+		{"http homepage", "name: s3\nhomepage: http://plakar.io\n", `homepage "http://plakar.io" is not an https URL`},
+		{"homepage without scheme", "name: s3\nhomepage: plakar.io\n", `homepage "plakar.io" is not an https URL`},
+		{"homepage without host", "name: s3\nhomepage: 'https:///path'\n", `homepage "https:///path" is not an https URL`},
+		{"mailto contact", "name: s3\ncontact: mailto:help@plakar.io\n", ""},
+		{"https contact", "name: s3\ncontact: https://plakar.io/support\n", ""},
+		{"email contact", "name: s3\ncontact: help@plakar.io\n", ""},
+		{"email contact with name", "name: s3\ncontact: Help <help@plakar.io>\n", ""},
+		{"blank contact", "name: s3\ncontact: ' '\n", `contact " " is neither an email address nor a URL`},
+		{"contact with neither", "name: s3\ncontact: help at plakar.io\n", `contact "help at plakar.io" is neither an email address nor a URL`},
+		{"contact without scheme", "name: s3\ncontact: plakar.io/support\n", `contact "plakar.io/support" is neither an email address nor a URL`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
