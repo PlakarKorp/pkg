@@ -120,6 +120,37 @@ func TestManifestNoConnectors(t *testing.T) {
 	}
 }
 
+func TestManifestFields(t *testing.T) {
+	const connectors = "connectors: [{type: importer, executable: tool}]\n"
+	tests := []struct {
+		name    string
+		fields  string
+		wantErr string
+	}{
+		{"all set", "name: s3\ndisplay_name: S3\ndescription: x\n", ""},
+		{"only name", "name: s3\n", ""},
+		{"missing name", "display_name: S3\ndescription: x\n", "name is required"},
+		{"blank name", "name: ' '\n", "name is required"},
+		{"blank display_name", "name: s3\ndisplay_name: \"\\t\"\n", "display_name is blank"},
+		{"blank description", "name: s3\ndescription: \"\\n \"\n", "description is blank"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var m Manifest
+			err := m.Parse(strings.NewReader(tt.fields + connectors))
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Parse: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("Parse error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestManifestValidation(t *testing.T) {
 	// try first with a good connector type and different
 	// combination of classes and subclasses
@@ -178,6 +209,7 @@ func TestManifestWindowsExeSuffix(t *testing.T) {
 
 	// Idempotent: an executable that already ends in .exe is untouched.
 	const withExe = `
+name: tool
 connectors:
   - type: storage
     executable: tool.exe
