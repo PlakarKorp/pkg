@@ -21,6 +21,8 @@ package pkg
 import (
 	"fmt"
 	"io"
+	"net/mail"
+	"net/url"
 	"os"
 	"runtime"
 	"strings"
@@ -128,7 +130,26 @@ func (m *Manifest) Validate() error {
 			return fmt.Errorf("%s is blank", f.name)
 		}
 	}
+	if m.Homepage != "" && !isHTTPSURL(m.Homepage) {
+		return fmt.Errorf("homepage %q is not an https URL", m.Homepage)
+	}
+	if m.Contact != "" && !isContact(m.Contact) {
+		return fmt.Errorf("contact %q is neither an email address nor a URL", m.Contact)
+	}
 	return nil
+}
+
+func isHTTPSURL(s string) bool {
+	u, err := url.Parse(s)
+	return err == nil && u.Scheme == "https" && u.Host != ""
+}
+
+func isContact(s string) bool {
+	if _, err := mail.ParseAddress(s); err == nil {
+		return true
+	}
+	u, err := url.Parse(s)
+	return err == nil && u.Scheme != "" && (u.Host != "" || u.Opaque != "")
 }
 
 func (conn *ManifestConnector) Flags() (flags location.Flags, err error) {
