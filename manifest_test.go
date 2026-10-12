@@ -464,6 +464,38 @@ func TestManifestConnectorImageID(t *testing.T) {
 	}
 }
 
+func TestManifestConnectorImage(t *testing.T) {
+	tests := []struct {
+		name    string
+		image   string
+		wantErr string
+	}{
+		{"unset", "", ""},
+		{"tag", "ghcr.io/plakarkorp/redis-importer:v1.0.0", ""},
+		{"digest", "registry.plakar.io/plugin-postgres@" + testImageID, ""},
+		{"registry port", "localhost:5000/importer", ""},
+		{"blank", " ", `image " " is not a registry reference`},
+		{"space", "ghcr.io/x :v1", `image "ghcr.io/x :v1" is not a registry reference`},
+		{"url", "https://ghcr.io/x:v1", `image "https://ghcr.io/x:v1" is not a registry reference`},
+		{"leading hyphen", "--privileged", `image "--privileged" is not a registry reference`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := ManifestConnector{Type: "importer", ImageID: testImageID, Image: tt.image, Protocols: []string{"s3"}}
+			err := c.Validate()
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("Validate error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestManifestProtocolOwners(t *testing.T) {
 	tests := []struct {
 		name       string
