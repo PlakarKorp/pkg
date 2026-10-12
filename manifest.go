@@ -246,6 +246,10 @@ func (conn *ManifestConnector) Validate() error {
 		if !imageIDRe.MatchString(conn.ImageID) {
 			return fmt.Errorf("image_id %q is not sha256:<64 lowercase hex digits>", conn.ImageID)
 		}
+		if conn.Image != "" && (strings.ContainsFunc(conn.Image, unicode.IsSpace) ||
+			strings.Contains(conn.Image, "://") || strings.HasPrefix(conn.Image, "-")) {
+			return fmt.Errorf("image %q is not a registry reference", conn.Image)
+		}
 	}
 
 	if len(conn.Protocols) == 0 {
