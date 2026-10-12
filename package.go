@@ -69,15 +69,22 @@ func isOsArchChar(c byte) bool {
 	return 'A' <= c && c <= 'Z' || 'a' <= c && c <= 'z' || '0' <= c && c <= '9'
 }
 
+func checkName(name string) error {
+	for i := 0; i < len(name); i++ {
+		if !isNameChar(name[i]) {
+			return fmt.Errorf("%w %q: contains invalid char '%c",
+				ErrBadPackageName, name, name[i])
+		}
+	}
+	return nil
+}
+
 func (pkg *Package) Validate() error {
 	if pkg.Name == "" || pkg.Version == "" || pkg.OperatingSystem == "" || pkg.Architecture == "" {
 		return ErrBadPackageName
 	}
-	for i := 0; i < len(pkg.Name); i++ {
-		if !isNameChar(pkg.Name[i]) {
-			return fmt.Errorf("%w %q: contains invalid char '%c",
-				ErrBadPackageName, pkg.Name, pkg.Name[i])
-		}
+	if err := checkName(pkg.Name); err != nil {
+		return err
 	}
 
 	if !semver.IsValid(pkg.Version) {

@@ -131,6 +131,11 @@ func TestManifestFields(t *testing.T) {
 		{"only name", "name: s3\n", ""},
 		{"missing name", "display_name: S3\ndescription: x\n", "name is required"},
 		{"blank name", "name: ' '\n", "name is required"},
+		{"name with hyphen", "name: aws-inventory\n", ""},
+		{"name with underscore", "name: my_plugin\n", `name: invalid package name "my_plugin"`},
+		{"name with space", "name: my plugin\n", `name: invalid package name "my plugin"`},
+		{"name with slash", "name: ../s3\n", `name: invalid package name "../s3"`},
+		{"name with non-ascii", "name: café\n", `name: invalid package name "café"`},
 		{"blank display_name", "name: s3\ndisplay_name: \"\\t\"\n", "display_name is blank"},
 		{"blank description", "name: s3\ndescription: \"\\n \"\n", "description is blank"},
 	}
