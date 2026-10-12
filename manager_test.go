@@ -442,6 +442,33 @@ func TestFetchBinaryThroughAdd(t *testing.T) {
 	}
 }
 
+func TestFetchBinaryRejectsBadRecipeName(t *testing.T) {
+	for _, name := range []string{"../../evil", "-rf", "s3_extra", "s3/evil"} {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if !strings.HasSuffix(r.URL.Path, "recipe.yaml") {
+					t.Errorf("unexpected request for %q", r.URL.Path)
+					http.Error(w, "unexpected", http.StatusNotFound)
+					return
+				}
+				fmt.Fprintf(w, "name: %q\nversion: v1.2.3\n", name)
+			}))
+			defer srv.Close()
+
+			be := newFakeBackend()
+			m, _ := New(be, &Options{DistURL: srv.URL})
+
+			err := m.Add("s3", &AddOptions{ImplicitFetch: true})
+			if !errors.Is(err, ErrBadPackageName) {
+				t.Fatalf("Add error = %v, want ErrBadPackageName", err)
+			}
+			if len(be.loaded) != 0 {
+				t.Errorf("backend Load called %d times, want 0", len(be.loaded))
+			}
+		})
+	}
+}
+
 func TestAddFromNonDefaultEdition(t *testing.T) {
 	wantFile := (&Package{
 		Name:            "s3",

@@ -485,6 +485,9 @@ func (p *Manager) fetchbinary(name, version, edition string, container bool) err
 		Architecture:    runtime.GOARCH,
 		OperatingSystem: goos,
 	}
+	if err := pkg.Validate(); err != nil {
+		return err
+	}
 
 	repo, err := p.repoFor(edition)
 	if err != nil {
