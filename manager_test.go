@@ -487,6 +487,29 @@ func TestFetchBinaryRejectsBadName(t *testing.T) {
 	}
 }
 
+func TestAddRejectsShorthandVersion(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request for %q", r.URL.Path)
+		http.Error(w, "unexpected", http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	for _, version := range []string{"v1", "v1.0", "v1.0.0+build.1"} {
+		t.Run(version, func(t *testing.T) {
+			be := newFakeBackend(pkgVer("s3", "v1.0.0"))
+			m, _ := New(be, &Options{DistURL: srv.URL})
+
+			err := m.Add("s3", &AddOptions{ImplicitFetch: true, Version: version, Replace: true})
+			if !errors.Is(err, ErrBadPackageName) {
+				t.Fatalf("Add error = %v, want ErrBadPackageName", err)
+			}
+			if len(be.unloaded) != 0 {
+				t.Errorf("unloaded %v, want nothing", be.unloaded)
+			}
+		})
+	}
+}
+
 func TestFetchRecipeRejectsMismatch(t *testing.T) {
 	for _, name := range []string{"gcs", "../../evil", "-rf", ""} {
 		t.Run(name, func(t *testing.T) {

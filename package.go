@@ -69,6 +69,13 @@ func isOsArchChar(c byte) bool {
 	return 'A' <= c && c <= 'Z' || 'a' <= c && c <= 'z' || '0' <= c && c <= '9'
 }
 
+// validVersion returns whether v is a semver in canonical form.  Shorthands
+// such as "v1", and build metadata, compare equal to other versions while
+// being serialized differently, and are thus rejected.
+func validVersion(v string) bool {
+	return v != "" && semver.Canonical(v) == v
+}
+
 func checkName(name string) error {
 	if name == "" {
 		return ErrBadPackageName
@@ -93,7 +100,7 @@ func (pkg *Package) Validate() error {
 		return err
 	}
 
-	if !semver.IsValid(pkg.Version) {
+	if !validVersion(pkg.Version) {
 		return fmt.Errorf("%w: invalid version %q", ErrBadPackageName, pkg.Version)
 	}
 

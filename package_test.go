@@ -53,6 +53,9 @@ func TestPackageParseNameErrors(t *testing.T) {
 		{"empty arch field", "s3_v1.2.3_linux_.ptar"},
 		{"version without v prefix", "s3_1.2.3_linux_amd64.ptar"},
 		{"invalid version", "s3_notaversion_linux_amd64.ptar"},
+		{"major-only version", "s3_v1_linux_amd64.ptar"},
+		{"major.minor version", "s3_v1.2_linux_amd64.ptar"},
+		{"version with build metadata", "s3_v1.2.3+build.1_linux_amd64.ptar"},
 		{"invalid char in name", "s3$_v1.2.3_linux_amd64.ptar"},
 		{"name starting with hyphen", "-rf_v1.2.3_linux_amd64.ptar"},
 		{"invalid char in os", "s3_v1.2.3_lin/ux_amd64.ptar"},
@@ -89,6 +92,15 @@ func TestPackageValidate(t *testing.T) {
 		{
 			name:    "empty name",
 			pkg:     Package{Name: "", Version: "v1.2.3", OperatingSystem: "linux", Architecture: "amd64"},
+			wantErr: true,
+		},
+		{
+			name: "valid prerelease",
+			pkg:  Package{Name: "s3", Version: "v1.2.3-rc.1", OperatingSystem: "linux", Architecture: "amd64"},
+		},
+		{
+			name:    "shorthand version",
+			pkg:     Package{Name: "s3", Version: "v1.2", OperatingSystem: "linux", Architecture: "amd64"},
 			wantErr: true,
 		},
 		{
