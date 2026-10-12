@@ -153,6 +153,9 @@ func (m *Manifest) Validate() error {
 			return fmt.Errorf("%s is blank", f.name)
 		}
 	}
+	if m.APIVersion != "" && !validVersion(m.APIVersion) {
+		return fmt.Errorf("api_version %q is not a valid version", m.APIVersion)
+	}
 	if m.Homepage != "" && !isHTTPSURL(m.Homepage) {
 		return fmt.Errorf("homepage %q is not an https URL", m.Homepage)
 	}
