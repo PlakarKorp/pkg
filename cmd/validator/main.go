@@ -24,9 +24,9 @@ func main() {
 func newRootCmd() *cobra.Command {
 	var verbose bool
 	cmd := &cobra.Command{
-		Use:          "validator <package.ptar>",
-		Short:        "Check a packaged plakar integration",
-		Long:         "Check the README, the manifest of a packaged plakar integration and every JSON Schema it references.",
+		Use:          "validator <package.ptar | integration-dir>",
+		Short:        "Check a plakar integration",
+		Long:         "Check the README, the manifest of a plakar integration and every JSON Schema it references, from a packaged ptar or a source directory.",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -34,7 +34,7 @@ func newRootCmd() *cobra.Command {
 			if verbose {
 				v.Logger = log.New(cmd.OutOrStdout(), "", 0)
 			}
-			if err := validatePtar(v, args[0]); err != nil {
+			if err := validate(v, args[0]); err != nil {
 				return fmt.Errorf("%s: %w", args[0], err)
 			}
 			_, err := fmt.Fprintf(cmd.OutOrStdout(), "%s: ok\n", args[0])
@@ -43,6 +43,17 @@ func newRootCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "log each file as it is checked")
 	return cmd
+}
+
+func validate(v *validator.Validator, target string) error {
+	fi, err := os.Stat(target)
+	if err != nil {
+		return err
+	}
+	if fi.IsDir() {
+		return v.ValidateRepo(target)
+	}
+	return validatePtar(v, target)
 }
 
 func validatePtar(v *validator.Validator, ptar string) (err error) {
