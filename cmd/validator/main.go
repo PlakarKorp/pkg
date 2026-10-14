@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -24,14 +25,27 @@ func main() {
 func newRootCmd() *cobra.Command {
 	var verbose bool
 	cmd := &cobra.Command{
-		Use:          "validator <package.ptar | integration-dir>",
+		Use:          "validator",
 		Short:        "Check a plakar integration",
-		Long:         "Check the README, the manifest of a plakar integration and every JSON Schema it references, from a packaged ptar or a source directory.",
-		Args:         cobra.ExactArgs(1),
+		Long:         "Check the README, the manifest of a plakar integration and every JSON Schema it references.",
 		SilenceUsage: true,
+	}
+	cmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "log each file as it is checked")
+	cmd.AddCommand(
+		newValidateCmd(&verbose, "ptar <package.ptar>", "Check a packaged integration", validatePtar),
+		newValidateCmd(&verbose, "repo <dir>", "Check an integration source directory", validateRepo),
+	)
+	return cmd
+}
+
+func newValidateCmd(verbose *bool, use, short string, validate func(*validator.Validator, string) error) *cobra.Command {
+	return &cobra.Command{
+		Use:   use,
+		Short: short,
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			v := &validator.Validator{}
-			if verbose {
+			if *verbose {
 				v.Logger = log.New(cmd.OutOrStdout(), "", 0)
 			}
 			if err := validate(v, args[0]); err != nil {
@@ -41,19 +55,17 @@ func newRootCmd() *cobra.Command {
 			return err
 		},
 	}
-	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "log each file as it is checked")
-	return cmd
 }
 
-func validate(v *validator.Validator, target string) error {
-	fi, err := os.Stat(target)
+func validateRepo(v *validator.Validator, dir string) error {
+	fi, err := os.Stat(dir)
 	if err != nil {
 		return err
 	}
-	if fi.IsDir() {
-		return v.ValidateRepo(target)
+	if !fi.IsDir() {
+		return errors.New("not a directory")
 	}
-	return validatePtar(v, target)
+	return v.ValidateRepo(dir)
 }
 
 func validatePtar(v *validator.Validator, ptar string) (err error) {
