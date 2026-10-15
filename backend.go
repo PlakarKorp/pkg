@@ -23,6 +23,14 @@ import (
 	"iter"
 )
 
+// ManifestReader is implemented by backends that keep installed packages
+// extracted on disk. It returns the manifest of an installed package and
+// the directory it was extracted to, or an error if the package isn't
+// extracted or its manifest can't be loaded.
+type ManifestReader interface {
+	Manifest(pkg *Package) (*Manifest, string, error)
+}
+
 type Backend interface {
 	// List returns an iterator of plugin names,
 	// e.g. s3_v1.0.0_openbsd_amd64.ptar, optionally filtered by
@@ -39,4 +47,11 @@ type Backend interface {
 
 	// Unload a plugin
 	Unload(*Package) error
+}
+
+// OriginStore is implemented by backends that remember which registry an
+// installed package was fetched from.
+type OriginStore interface {
+	SetOrigin(pkg *Package, origin string) error
+	Origin(pkg *Package) (string, error) // "" and no error when unknown
 }
