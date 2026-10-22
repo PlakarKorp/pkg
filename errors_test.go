@@ -203,3 +203,63 @@ func TestAddPackageMissingCredentials(t *testing.T) {
 	require.Equal(t, ArtifactPackage, ie.Artifact)
 	require.Zero(t, ie.StatusCode)
 }
+
+var errRejected = errors.New("rejected")
+
+func reject(a *Artifact, rd io.Reader) error {
+	return fmt.Errorf("%w: %w", ErrUnverified, errRejected)
+}
+
+// The Verifier owns the reason; the InstallError adds what was being
+// verified and where it came from.
+func TestVerifierRejectionIsInstallError(t *testing.T) {
+	srv := registry(t, map[string]string{
+		"recipe.yaml": "name: s3\nversion: v1.2.3\n",
+		(&Package{Name: "s3", Version: "v1.2.3", OperatingSystem: runtime.GOOS, Architecture: runtime.GOARCH}).Filename(): "PTARDATA",
+	})
+
+	t.Run("recipe", func(t *testing.T) {
+		m, err := New(newFakeBackend(), &Options{DistURL: srv.URL, Verifier: VerifierFunc(reject)})
+		require.NoError(t, err)
+
+		_, err = m.FetchRecipe("s3", nil)
+		require.ErrorIs(t, err, errRejected)
+
+		var ie *InstallError
+		require.ErrorAs(t, err, &ie)
+		require.Equal(t, ArtifactRecipe, ie.Artifact)
+		require.Equal(t, srv.URL+"/community/"+PLUGIN_API_VERSION+"/s3/recipe.yaml", ie.URL)
+	})
+
+	t.Run("package", func(t *testing.T) {
+		m, err := New(newFakeBackend(), &Options{DistURL: srv.URL, Verifier: VerifierFunc(reject)})
+		require.NoError(t, err)
+
+		err = m.Add("s3", &AddOptions{ImplicitFetch: true, Version: "v1.2.3"})
+		require.ErrorIs(t, err, errRejected)
+
+		var ie *InstallError
+		require.ErrorAs(t, err, &ie)
+		require.Equal(t, ArtifactPackage, ie.Artifact)
+		require.Equal(t, "v1.2.3", ie.Package.Version)
+		require.Equal(t, "community", ie.Edition)
+		require.True(t, strings.HasSuffix(ie.URL, ie.Package.Filename()))
+	})
+
+	t.Run("local", func(t *testing.T) {
+		m, err := New(newFakeBackend(), &Options{Verifier: VerifierFunc(reject)})
+		require.NoError(t, err)
+
+		target := writeLocalPkg(t, t.TempDir(), "s3", []byte("artifact"), nil)
+		err = m.Add(target, nil)
+		require.ErrorIs(t, err, errRejected)
+
+		var ie *InstallError
+		require.ErrorAs(t, err, &ie)
+		require.Equal(t, ArtifactPackage, ie.Artifact)
+		require.Equal(t, "s3", ie.Name)
+		require.Equal(t, target, ie.URL)
+		require.Empty(t, ie.Edition)
+		require.Zero(t, ie.StatusCode)
+	})
+}

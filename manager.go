@@ -345,7 +345,7 @@ func (p *Manager) Add(target string, opts *AddOptions) error {
 
 	rd, err := p.verify(pkg.Filename(), &pkg, LocalOrigin, sig, fp)
 	if err != nil {
-		return err
+		return newInstallError(pkg.Name, &pkg, "", ArtifactPackage, target, err)
 	}
 
 	return p.store.Load(&pkg, rd, sig)
@@ -431,7 +431,7 @@ func (p *Manager) FetchRecipe(name string, opts *FetchOptions) (*Recipe, error) 
 
 	s := path.Join(PLUGIN_API_VERSION, name, filename)
 	fail := func(kind ArtifactKind, endpoint string, err error) error {
-		return newInstallError(name, nil, edition, kind, joinURL(repo, endpoint), err)
+		return newInstallError(name, nil, edition, kind, joinURL(repo, endpoint).String(), err)
 	}
 
 	// A recipe resolves which version gets installed, so it must be
@@ -449,7 +449,7 @@ func (p *Manager) FetchRecipe(name string, opts *FetchOptions) (*Recipe, error) 
 
 	rd, err := p.verify(filename, nil, repo.String(), sig, resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, fail(ArtifactRecipe, s, err)
 	}
 
 	var recipe Recipe
@@ -535,7 +535,7 @@ func (p *Manager) fetchbinary(name, version, edition string, container bool) err
 
 	s := path.Join(PLUGIN_API_VERSION, name, pkg.Filename())
 	fail := func(kind ArtifactKind, endpoint string, err error) error {
-		return newInstallError(name, &pkg, edition, kind, joinURL(repo, endpoint), err)
+		return newInstallError(name, &pkg, edition, kind, joinURL(repo, endpoint).String(), err)
 	}
 
 	// Fetched first, so a missing signature fails before pulling down tens
@@ -553,7 +553,7 @@ func (p *Manager) fetchbinary(name, version, edition string, container bool) err
 
 	rd, err := p.verify(pkg.Filename(), &pkg, repo.String(), sig, resp.Body)
 	if err != nil {
-		return err
+		return fail(ArtifactPackage, s, err)
 	}
 
 	return p.store.Load(&pkg, rd, sig)

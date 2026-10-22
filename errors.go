@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 )
 
 // ArtifactKind is the file an [InstallError] is about.
@@ -32,14 +31,14 @@ func (k ArtifactKind) String() string {
 // Error gives the full detail, URL included, and is meant for logs; the
 // fields let a caller build a shorter message for the user. Err is the cause,
 // to be matched with errors.Is: [ErrNotFound], [ErrForbidden],
-// [ErrAuthorizationRequired], [ErrUnexpectedStatus], [ErrRecipeMismatch], or
-// whatever the transport or the recipe parser returned.
+// [ErrAuthorizationRequired], [ErrUnexpectedStatus], [ErrRecipeMismatch], the
+// [Verifier]'s error, or whatever the transport or the recipe parser returned.
 type InstallError struct {
 	Name       string       // requested package name, always set
 	Package    *Package     // nil until the version is resolved
-	Edition    string       // the resolved edition
+	Edition    string       // the resolved edition, empty for a local install
 	Artifact   ArtifactKind // the file that failed
-	URL        string       // where it was fetched from
+	URL        string       // where it was fetched from, or the local path
 	StatusCode int          // 0 when there was no HTTP response
 	Err        error
 }
@@ -56,13 +55,13 @@ func (e *InstallError) Unwrap() error {
 	return e.Err
 }
 
-func newInstallError(name string, pkg *Package, edition string, kind ArtifactKind, u *url.URL, err error) *InstallError {
+func newInstallError(name string, pkg *Package, edition string, kind ArtifactKind, location string, err error) *InstallError {
 	e := &InstallError{
 		Name:     name,
 		Package:  pkg,
 		Edition:  edition,
 		Artifact: kind,
-		URL:      u.String(),
+		URL:      location,
 		Err:      err,
 	}
 
