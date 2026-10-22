@@ -53,6 +53,8 @@ var (
 	ErrBadEdition            = errors.New("bad edition")
 	ErrRecipeMismatch        = errors.New("recipe does not match the requested package")
 	ErrNotFound              = errors.New("not found")
+	ErrForbidden             = errors.New("forbidden")
+	ErrUnexpectedStatus      = errors.New("unexpected status")
 
 	editionre = regexp.MustCompile(`^[-_a-zA-Z0-9]+$`)
 )
@@ -349,9 +351,11 @@ func (p *Manager) Add(target string, opts *AddOptions) error {
 	return p.store.Load(&pkg, rd, sig)
 }
 
-func (p *Manager) repoFor(edition string) (*url.URL, error) {
+// repoFor returns the repository URL for edition, and the edition itself
+// once defaulted.
+func (p *Manager) repoFor(edition string) (*url.URL, string, error) {
 	if p.repository == nil {
-		return nil, ErrNoDistURL
+		return nil, "", ErrNoDistURL
 	}
 
 	u := *p.repository
@@ -359,16 +363,21 @@ func (p *Manager) repoFor(edition string) (*url.URL, error) {
 		edition = p.edition
 	}
 	if !editionre.MatchString(edition) {
-		return nil, fmt.Errorf("%w: %q", ErrBadEdition, edition)
+		return nil, "", fmt.Errorf("%w: %q", ErrBadEdition, edition)
 	}
 
 	u.Path = path.Join(u.Path, edition)
-	return &u, nil
+	return &u, edition, nil
+}
+
+func joinURL(base *url.URL, endpoint string) *url.URL {
+	u := *base
+	u.Path = path.Join(u.Path, endpoint)
+	return &u
 }
 
 func (p *Manager) fetch(url *url.URL, endpoint string, reqauth bool) (*http.Response, error) {
-	u := *url
-	u.Path = path.Join(u.Path, endpoint)
+	u := joinURL(url, endpoint)
 
 	req, err := http.NewRequest("GET", u.String(), nil)
 	if err != nil {
@@ -391,13 +400,9 @@ func (p *Manager) fetch(url *url.URL, endpoint string, reqauth bool) (*http.Resp
 		return nil, err
 	}
 
-	if resp.StatusCode == http.StatusNotFound {
+	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
-		return nil, fmt.Errorf("%w: %s", ErrNotFound, resp.Status)
-	}
-	if resp.StatusCode != 200 {
-		resp.Body.Close()
-		return nil, fmt.Errorf("fetch failed with %s", resp.Status)
+		return nil, newStatusError(resp)
 	}
 	return resp, nil
 }
@@ -419,22 +424,26 @@ func (p *Manager) FetchRecipe(name string, opts *FetchOptions) (*Recipe, error) 
 
 	const filename = "recipe.yaml"
 
-	repo, err := p.repoFor(opts.Edition)
-	if err != nil {
-		return nil, err
-	}
-
-	// A recipe resolves which version gets installed, so it must be
-	// verified before it is parsed.
-	sig, err := p.fetchsig(repo, path.Join(PLUGIN_API_VERSION, name, filename))
+	repo, edition, err := p.repoFor(opts.Edition)
 	if err != nil {
 		return nil, err
 	}
 
 	s := path.Join(PLUGIN_API_VERSION, name, filename)
+	fail := func(kind ArtifactKind, endpoint string, err error) error {
+		return newInstallError(name, nil, edition, kind, joinURL(repo, endpoint), err)
+	}
+
+	// A recipe resolves which version gets installed, so it must be
+	// verified before it is parsed.
+	sig, err := p.fetchsig(repo, s)
+	if err != nil {
+		return nil, fail(ArtifactSignature, s+sigSuffix, err)
+	}
+
 	resp, err := p.fetch(repo, s, false)
 	if err != nil {
-		return nil, err
+		return nil, fail(ArtifactRecipe, s, err)
 	}
 	defer resp.Body.Close()
 
@@ -445,10 +454,10 @@ func (p *Manager) FetchRecipe(name string, opts *FetchOptions) (*Recipe, error) 
 
 	var recipe Recipe
 	if err := recipe.Parse(rd); err != nil {
-		return nil, err
+		return nil, fail(ArtifactRecipe, s, err)
 	}
 	if recipe.Name != name {
-		return nil, fmt.Errorf("%w: asked for %q, got %q", ErrRecipeMismatch, name, recipe.Name)
+		return nil, fail(ArtifactRecipe, s, fmt.Errorf("%w: asked for %q, got %q", ErrRecipeMismatch, name, recipe.Name))
 	}
 
 	return &recipe, nil
@@ -519,23 +528,26 @@ func (p *Manager) fetchbinary(name, version, edition string, container bool) err
 		return err
 	}
 
-	repo, err := p.repoFor(edition)
+	repo, edition, err := p.repoFor(edition)
 	if err != nil {
 		return err
 	}
 
 	s := path.Join(PLUGIN_API_VERSION, name, pkg.Filename())
+	fail := func(kind ArtifactKind, endpoint string, err error) error {
+		return newInstallError(name, &pkg, edition, kind, joinURL(repo, endpoint), err)
+	}
 
 	// Fetched first, so a missing signature fails before pulling down tens
 	// of megabytes.
 	sig, err := p.fetchsig(repo, s)
 	if err != nil {
-		return err
+		return fail(ArtifactSignature, s+sigSuffix, err)
 	}
 
 	resp, err := p.fetch(repo, s, p.binaryNeedsAuth)
 	if err != nil {
-		return err
+		return fail(ArtifactPackage, s, err)
 	}
 	defer resp.Body.Close()
 
