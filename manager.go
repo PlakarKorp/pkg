@@ -52,6 +52,7 @@ var (
 	ErrNoApiURL              = errors.New("no ApiURL provided")
 	ErrBadEdition            = errors.New("bad edition")
 	ErrRecipeMismatch        = errors.New("recipe does not match the requested package")
+	ErrNotFound              = errors.New("not found")
 
 	editionre = regexp.MustCompile(`^[-_a-zA-Z0-9]+$`)
 )
@@ -390,6 +391,10 @@ func (p *Manager) fetch(url *url.URL, endpoint string, reqauth bool) (*http.Resp
 		return nil, err
 	}
 
+	if resp.StatusCode == http.StatusNotFound {
+		resp.Body.Close()
+		return nil, fmt.Errorf("%w: %s", ErrNotFound, resp.Status)
+	}
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		return nil, fmt.Errorf("fetch failed with %s", resp.Status)
@@ -451,15 +456,19 @@ func (p *Manager) FetchRecipe(name string, opts *FetchOptions) (*Recipe, error) 
 
 // fetchsig retrieves the .sum.sig accompanying the file at endpoint. A missing
 // signature yields a nil slice, leaving it to the Verifier to decide what an
-// unsigned file means.
+// unsigned file means. Only a 404 counts as missing: any other failure would
+// let an unreachable signature pass for an unsigned file.
 func (p *Manager) fetchsig(url *url.URL, endpoint string) ([]byte, error) {
 	if p.verifier == nil {
 		return nil, nil
 	}
 
 	resp, err := p.fetch(url, endpoint+sigSuffix, false)
-	if err != nil {
+	if errors.Is(err, ErrNotFound) {
 		return nil, nil
+	}
+	if err != nil {
+		return nil, err
 	}
 	defer resp.Body.Close()
 

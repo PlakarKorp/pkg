@@ -137,3 +137,52 @@ func TestNoVerifierSkipsSignatureFetch(t *testing.T) {
 		require.False(t, strings.HasSuffix(p, sigSuffix), "fetched %s with no Verifier configured", p)
 	}
 }
+
+// Only a 404 means the signature is absent. Any other failure must abort,
+// otherwise an outage on the signature path reads as "unsigned" and a lax
+// policy installs whatever it is served.
+func TestSignatureFetchFailureIsNotUnsigned(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  int
+		wantErr bool
+	}{
+		{"not found", http.StatusNotFound, false},
+		{"server error", http.StatusInternalServerError, true},
+		{"forbidden", http.StatusForbidden, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/community/"+PLUGIN_API_VERSION+"/s3/recipe.yaml", func(w http.ResponseWriter, r *http.Request) {
+				fmt.Fprint(w, testRecipe)
+			})
+			mux.HandleFunc("/community/"+PLUGIN_API_VERSION+"/s3/recipe.yaml"+sigSuffix, func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.status)
+			})
+			srv := httptest.NewServer(mux)
+			defer srv.Close()
+
+			verified := false
+			m, err := New(newFakeBackend(), &Options{
+				DistURL: srv.URL,
+				Verifier: VerifierFunc(func(a *Artifact, rd io.Reader) error {
+					verified = true
+					io.Copy(io.Discard, rd)
+					return nil
+				}),
+			})
+			require.NoError(t, err)
+
+			_, err = m.FetchRecipe("s3", nil)
+			if !tt.wantErr {
+				require.NoError(t, err)
+				require.True(t, verified)
+				return
+			}
+			require.Error(t, err)
+			require.False(t, verified, "an unreachable signature reached the Verifier as unsigned")
+		})
+	}
+}
