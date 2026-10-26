@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/PlakarKorp/integration-sdk"
 	"github.com/PlakarKorp/kloset/kcontext"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
@@ -212,10 +213,10 @@ func TestFlatBackendUnloadHook(t *testing.T) {
 		Name: "s3",
 		Connectors: []ManifestConnector{{
 			Protocols:  []string{"s3"},
-			Type:       ConnectorTypeImporter,
+			Type:       integration.ConnectorTypeImporter,
 			Executable: "true",
-			Class:      ResourceClassObjectStorage,
-			SubClass:   ResourceSubClassS3,
+			Class:      integration.ResourceClassObjectStorage,
+			SubClass:   integration.ResourceSubClassS3,
 		}},
 	})
 	require.NoError(t, err)
