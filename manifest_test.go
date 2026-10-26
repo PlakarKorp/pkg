@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/PlakarKorp/integration-sdk"
 	"github.com/PlakarKorp/kloset/location"
 	"github.com/stretchr/testify/require"
 )
@@ -60,9 +61,9 @@ func TestManifestParse(t *testing.T) {
 	require.Len(t, m.Connectors, 1)
 
 	c := m.Connectors[0]
-	require.Equal(t, ConnectorTypeStorage, c.Type)
-	require.Equal(t, ResourceClassObjectStorage, c.Class)
-	require.Equal(t, ResourceSubClassS3, c.SubClass)
+	require.Equal(t, integration.ConnectorTypeStorage, c.Type)
+	require.Equal(t, integration.ResourceClassObjectStorage, c.Class)
+	require.Equal(t, integration.ResourceSubClassS3, c.SubClass)
 	require.Equal(t, "s3-storage", strings.TrimSuffix(c.Executable, ".exe"))
 	require.Equal(t, []string{"--verbose"}, c.Args)
 }
@@ -149,15 +150,15 @@ func TestManifestValidation(t *testing.T) {
 	// try first with a good connector type and different
 	// combination of classes and subclasses
 	suite := []struct {
-		class    ResourceClass
-		subclass ResourceSubClass
+		class    integration.ResourceClass
+		subclass integration.ResourceSubClass
 		ok       bool
 	}{
-		{ResourceClassUndefined, ResourceSubClassUndefined, true},
-		{ResourceClassObjectStorage, ResourceSubClassS3, true},
-		{ResourceClassObjectStorage, ResourceSubClassUndefined, true},
-		{ResourceClassObjectStorage, ResourceSubClassPostgreSQL, false},
-		{ResourceClassObjectStorage, ResourceSubClass("foobar"), false},
+		{integration.ResourceClassUndefined, integration.ResourceSubClassUndefined, true},
+		{integration.ResourceClassObjectStorage, integration.ResourceSubClassS3, true},
+		{integration.ResourceClassObjectStorage, integration.ResourceSubClassUndefined, true},
+		{integration.ResourceClassObjectStorage, integration.ResourceSubClassPostgreSQL, false},
+		{integration.ResourceClassObjectStorage, integration.ResourceSubClass("foobar"), false},
 	}
 
 	for _, test := range suite {

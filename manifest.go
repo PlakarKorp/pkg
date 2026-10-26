@@ -30,6 +30,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/PlakarKorp/integration-sdk"
 	"github.com/PlakarKorp/kloset/location"
 	"go.yaml.in/yaml/v3"
 )
@@ -39,9 +40,9 @@ var protocolRe = regexp.MustCompile(`^[A-Za-z0-9+.][A-Za-z0-9+.-]+$`)
 var imageIDRe = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 
 type ManifestConnector struct {
-	Type          ConnectorType    `yaml:"type"`
-	Class         ResourceClass    `yaml:"class,omitempty"`
-	SubClass      ResourceSubClass `yaml:"subclass,omitempty"`
+	Type          integration.ConnectorType    `yaml:"type"`
+	Class         integration.ResourceClass    `yaml:"class,omitempty"`
+	SubClass      integration.ResourceSubClass `yaml:"subclass,omitempty"`
 	Validator     string           `yaml:"validator,omitempty"`
 	Protocols     []string         `yaml:"protocols"`
 	LocationFlags []string         `yaml:"location_flags,omitempty"`
@@ -103,7 +104,7 @@ func (m *Manifest) Parse(rd io.Reader) error {
 	}
 
 	type key struct {
-		ct    ConnectorType
+		ct    integration.ConnectorType
 		proto string
 	}
 	seen := make(map[key]int)
@@ -210,16 +211,16 @@ func (conn *ManifestConnector) Validate() error {
 	}
 
 	var (
-		class    = ResourceClass(conn.Class)
-		subclass = ResourceSubClass(conn.SubClass)
-		ct       = ConnectorType(conn.Type)
+		class    = integration.ResourceClass(conn.Class)
+		subclass = integration.ResourceSubClass(conn.SubClass)
+		ct       = integration.ConnectorType(conn.Type)
 	)
 
 	if !class.IsValid() || !subclass.IsValid() {
 		return fmt.Errorf("bad class or subclass")
 	}
 
-	if subclass != ResourceSubClassUndefined && !subclass.IsSubClassOf(class) {
+	if subclass != integration.ResourceSubClassUndefined && !subclass.IsSubClassOf(class) {
 		return fmt.Errorf("subclass %s is not under class %s", subclass, class)
 	}
 
