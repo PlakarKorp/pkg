@@ -43,12 +43,12 @@ type ManifestConnector struct {
 	Type          integration.ConnectorType    `yaml:"type"`
 	Class         integration.ResourceClass    `yaml:"class,omitempty"`
 	SubClass      integration.ResourceSubClass `yaml:"subclass,omitempty"`
-	Validator     string           `yaml:"validator,omitempty"`
-	Protocols     []string         `yaml:"protocols"`
-	LocationFlags []string         `yaml:"location_flags,omitempty"`
-	Executable    string           `yaml:"executable,omitempty"`
-	Args          []string         `yaml:"args,omitempty"`
-	ExtraFiles    []string         `yaml:"extra_files,omitempty"`
+	Validator     string                       `yaml:"validator,omitempty"`
+	Protocols     []string                     `yaml:"protocols"`
+	LocationFlags []string                     `yaml:"location_flags,omitempty"`
+	Executable    string                       `yaml:"executable,omitempty"`
+	Args          []string                     `yaml:"args,omitempty"`
+	ExtraFiles    []string                     `yaml:"extra_files,omitempty"`
 
 	// Containerized connectors carry an image pin instead of an executable.
 	// ImageID is the sha256 of the image, filled at package creation time
