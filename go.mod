@@ -1,9 +1,9 @@
 module github.com/PlakarKorp/pkg
 
-go 1.27.3
+go 1.26.10
 
 require (
-	github.com/PlakarKorp/integration-sdk v1.1.0
+	github.com/PlakarKorp/integration-sdk v1.1.1
 	github.com/PlakarKorp/integrations/fs v1.1.7
 	github.com/PlakarKorp/integrations/ptar v1.1.1
 	github.com/PlakarKorp/kloset v1.1.8
