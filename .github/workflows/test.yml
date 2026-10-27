@@ -12,6 +12,10 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     name: Run on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      # The kortex coverage upload authenticates with the job's OIDC token.
+      id-token: write
     steps:
       - name: Clone the code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -21,10 +25,22 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # coverage only on linux
+      # coverage only on linux, with a JUnit XML for kortex. A test failure
+      # must not abort the job, or the uploads below would be skipped and we
+      # would lose the results that explain the failure: continue-on-error
+      # plus an explicit exit captures the outcome for the final step.
       - name: Running Tests with coverage
+        id: gotest
         if: matrix.os == 'ubuntu-latest'
-        run: go test -v -coverprofile=coverage.out ./...
+        continue-on-error: true
+        run: |
+          go install github.com/jstemmer/go-junit-report/v2@latest
+          set -o pipefail
+          go test -coverprofile=coverage.out -covermode=atomic -json ./... \
+            | "$(go env GOPATH)/bin/go-junit-report" -parser gojson -set-exit-code > junit.xml
+          status=$?
+          echo "test_exit=$status" >> "$GITHUB_OUTPUT"
+          exit $status
 
       - name: Running Tests
         if: matrix.os != 'ubuntu-latest'
@@ -36,3 +52,22 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.out
+
+      # kortex gets the same reports, sent by the uploader it serves (a public
+      # repository cannot use its action) with the job's OIDC token: no secret.
+      # A pull request from a fork gets no token and uploads nothing. Failing
+      # here is a warning, never a failed build.
+      - name: Upload coverage and test results to kortex
+        if: ${{ !cancelled() && matrix.os == 'ubuntu-latest' }}
+        run: |
+          if ! curl -fsSL --retry 3 https://kortex.plakar.io/dl/kortex-linux-amd64 -o "$RUNNER_TEMP/kortex"; then
+            echo "::warning title=kortex coverage upload::could not fetch the uploader"
+            exit 0
+          fi
+          chmod +x "$RUNNER_TEMP/kortex"
+          "$RUNNER_TEMP/kortex" coverage upload --url https://kortex.plakar.io coverage.out junit.xml
+
+      # Surface a genuine test failure now that the results have been uploaded.
+      - name: Fail if tests failed
+        if: ${{ matrix.os == 'ubuntu-latest' && steps.gotest.outputs.test_exit != '0' }}
+        run: exit 1
