@@ -27,9 +27,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/PlakarKorp/integration-sdk"
 	fsexporter "github.com/PlakarKorp/integrations/fs/exporter"
 	_ "github.com/PlakarKorp/integrations/ptar/storage"
-	"github.com/PlakarKorp/kloset/connectors"
 	"github.com/PlakarKorp/kloset/connectors/storage"
 	"github.com/PlakarKorp/kloset/kcontext"
 	"github.com/PlakarKorp/kloset/locate"
@@ -195,7 +195,7 @@ func (f *FlatBackend) extract(destDir, ptar string) error {
 
 	content := "fs://" + tmpdir + "/content"
 
-	fsexp, err := fsexporter.NewFSExporter(f.kcontext, &connectors.Options{
+	fsexp, err := fsexporter.NewFSExporter(f.kcontext, &integration.Options{
 		MaxConcurrency: 1,
 	}, "fs", map[string]string{
 		"location": content,

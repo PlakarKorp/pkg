@@ -31,7 +31,7 @@ import (
 	"unicode"
 
 	"github.com/PlakarKorp/integration-sdk"
-	"github.com/PlakarKorp/kloset/location"
+	"github.com/PlakarKorp/integration-sdk/location"
 	"go.yaml.in/yaml/v3"
 )
 
