@@ -43,7 +43,8 @@ type Connector struct {
 	Protocols []Protocol `json:"protocols"`
 	Class     string     `json:"class"`
 	SubClass  string     `json:"subclass"`
-	Validator any        `json:"validator"` // json schema
+	Validator any        `json:"validator"`    // json schema
+	UI        any        `json:"ui,omitempty"` // JSON Forms UI schema
 }
 
 type Integration struct {

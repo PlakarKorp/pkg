@@ -321,6 +321,28 @@ func TestManifestConnectorExecutable(t *testing.T) {
 	}
 }
 
+func TestManifestConnectorUI(t *testing.T) {
+	tests := []struct {
+		name      string
+		validator string
+		ui        string
+		wantErr   string
+	}{
+		{"none", "schema.json", "", ""},
+		{"beside the validator", "schema.json", "./ui.json", ""},
+		{"without validator", "", "ui.json", "ui needs a validator to lay out"},
+		{"parent", "schema.json", "../ui.json", `ui "../ui.json" escapes the integration directory`},
+		{"absolute", "schema.json", "/etc/ui.json", `ui "/etc/ui.json" escapes the integration directory`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := ManifestConnector{Type: "provisioner", Executable: "tool", Protocols: []string{"localdir"}, Validator: tt.validator, UI: tt.ui}
+			err := c.Validate()
+			requireErr(t, err, tt.wantErr)
+		})
+	}
+}
+
 func TestManifestConnectorExtraFiles(t *testing.T) {
 	tests := []struct {
 		name    string
