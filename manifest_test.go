@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/PlakarKorp/integration-sdk"
-	"github.com/PlakarKorp/kloset/location"
+	"github.com/PlakarKorp/integration-sdk/location"
 	"github.com/stretchr/testify/require"
 )
 
