@@ -34,6 +34,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"time"
 
 	"golang.org/x/mod/semver"
 )
@@ -55,6 +56,8 @@ var (
 	ErrNotFound              = errors.New("not found")
 	ErrForbidden             = errors.New("forbidden")
 	ErrUnexpectedStatus      = errors.New("unexpected status")
+	ErrBadRegistry           = errors.New("bad registry")
+	ErrUnknownRegistry       = errors.New("not a configured registry")
 
 	editionre = regexp.MustCompile(`^[-_a-zA-Z0-9]+$`)
 )
@@ -69,6 +72,10 @@ type Manager struct {
 	binaryNeedsAuth bool
 	useragent       string
 	verifier        Verifier
+	registries      []extraRegistry
+
+	// registryClient fetches the indexes of the registries.
+	registryClient *http.Client
 }
 
 type Options struct {
@@ -91,6 +98,13 @@ type Options struct {
 	// Verifier decides whether an artifact may be installed. When nil,
 	// nothing is verified and no signature is fetched.
 	Verifier Verifier
+
+	// Registries are additional package registries whose indexes
+	// [Manager.QueryAll] merges after the official one, in order.
+	// [Manager.Add] fetches a package from them when the official
+	// tree doesn't have it, and upgrades it from the registry it was
+	// installed from.
+	Registries []Registry
 }
 
 // WithBearer adds an Authorization header with the Bearer token
@@ -155,6 +169,13 @@ func New(store Backend, opts *Options) (*Manager, error) {
 		}
 		m.index = u
 	}
+
+	registries, err := parseRegistries(opts.Registries)
+	if err != nil {
+		return nil, err
+	}
+	m.registries = registries
+	m.registryClient = &http.Client{Timeout: registryIndexTimeout}
 
 	if m.useragent == "" {
 		m.useragent = "pkg/v0.0.1"
@@ -266,7 +287,10 @@ func (p *Manager) preadd(name, version string, opts *AddOptions) error {
 }
 
 // Add installs a package.  By default, it will fail if another
-// version of the same plugin is already present.
+// version of the same plugin is already present.  A package fetched from
+// an additional registry is recorded as such when the backend is an
+// [OriginStore]; if that fails, the package is not kept installed, and
+// when upgrading, the previous version is already removed.
 func (p *Manager) Add(target string, opts *AddOptions) error {
 	if opts == nil {
 		opts = &AddOptions{}
@@ -287,15 +311,13 @@ func (p *Manager) Add(target string, opts *AddOptions) error {
 	base := filepath.Base(target)
 
 	if opts.ImplicitFetch && !strings.HasSuffix(base, ".ptar") {
-		var name, version string
+		src, r, err := p.resolve(base, opts)
+		if err != nil {
+			return err
+		}
 
-		if opts.Version != "" {
-			name, version = base, opts.Version
-		} else {
-			r, err := p.FetchRecipe(base, &FetchOptions{Edition: opts.Edition})
-			if err != nil {
-				return err
-			}
+		name, version := base, opts.Version
+		if version == "" {
 			name, version = r.Name, r.Semver()
 		}
 
@@ -307,7 +329,7 @@ func (p *Manager) Add(target string, opts *AddOptions) error {
 			return err
 		}
 
-		return p.fetchbinary(name, version, opts.Edition, opts.Container)
+		return p.fetchbinary(src, name, version, opts.Edition, opts.Container)
 	}
 
 	var pkg Package
@@ -351,14 +373,111 @@ func (p *Manager) Add(target string, opts *AddOptions) error {
 	return p.store.Load(&pkg, rd, sig)
 }
 
-// repoFor returns the repository URL for edition, and the edition itself
-// once defaulted.
-func (p *Manager) repoFor(edition string) (*url.URL, string, error) {
-	if p.repository == nil {
+func (p *Manager) official() *source {
+	return &source{url: p.repository, needsAuth: p.binaryNeedsAuth}
+}
+
+// resolve finds the source to install name from and, unless opts gives
+// the version and the source is known without it, its recipe there.  An
+// installed package is fetched again from the registry it was installed
+// from, or from the official tree when none was recorded.  Otherwise, the
+// official tree is preferred and the additional registries are only tried
+// in order when it doesn't have the recipe, so a failing official tree or
+// registry never lets a later registry provide the name.
+func (p *Manager) resolve(name string, opts *AddOptions) (*source, *Recipe, error) {
+	src, err := p.installedFrom(name)
+	if err != nil {
+		return nil, nil, err
+	}
+	if src == nil && len(p.registries) == 0 {
+		src = p.official()
+	}
+	if src != nil {
+		if opts.Version != "" {
+			return src, nil, nil
+		}
+		r, err := p.fetchRecipe(src, name, opts.Edition)
+		return src, r, err
+	}
+
+	official := p.official()
+	r, err := p.fetchRecipe(official, name, opts.Edition)
+	if !errors.Is(err, ErrNotFound) {
+		return official, r, err
+	}
+
+	for i := range p.registries {
+		src := p.registries[i].source()
+		r, rerr := p.fetchRecipe(src, name, opts.Edition)
+		if rerr == nil {
+			return src, r, nil
+		}
+		if !errors.Is(rerr, ErrNotFound) {
+			return nil, nil, fmt.Errorf("registry %s: %w", p.registries[i].name, rerr)
+		}
+	}
+	return nil, nil, fmt.Errorf("%s: not found in the official repository or any configured registry: %w", name, err)
+}
+
+// installedFrom returns the source an installed version of name was
+// fetched from: the registry recorded for it, or the official tree when
+// none was.  It returns nil if name is not installed.
+func (p *Manager) installedFrom(name string) (*source, error) {
+	store, _ := p.store.(OriginStore)
+
+	installed := false
+	for pkg, err := range p.store.List(name) {
+		if err != nil {
+			return nil, err
+		}
+		installed = true
+		if store == nil {
+			break
+		}
+		origin, err := store.Origin(pkg)
+		if err != nil {
+			return nil, err
+		}
+		if origin == "" {
+			continue
+		}
+		if reg := p.registryOf(origin); reg != nil {
+			return reg.source(), nil
+		}
+		return nil, fmt.Errorf("%s: installed from %s, which is %w", name, origin, ErrUnknownRegistry)
+	}
+
+	if installed {
+		return p.official(), nil
+	}
+	return nil, nil
+}
+
+// registryOf returns the configured registry recorded as origin, or nil
+// if none is.
+func (p *Manager) registryOf(origin string) *extraRegistry {
+	for i := range p.registries {
+		if sameURL(p.registries[i].rawurl, origin) {
+			return &p.registries[i]
+		}
+	}
+	return nil
+}
+
+// sameURL tells whether two registry URLs are the same, regardless of a
+// trailing slash.
+func sameURL(a, b string) bool {
+	return strings.TrimSuffix(a, "/") == strings.TrimSuffix(b, "/")
+}
+
+// repoFor returns the repository URL of src for edition, and the edition
+// itself once defaulted.
+func (p *Manager) repoFor(src *source, edition string) (*url.URL, string, error) {
+	if src.url == nil {
 		return nil, "", ErrNoDistURL
 	}
 
-	u := *p.repository
+	u := *src.url
 	if edition == "" {
 		edition = p.edition
 	}
@@ -377,6 +496,10 @@ func joinURL(base *url.URL, endpoint string) *url.URL {
 }
 
 func (p *Manager) fetch(url *url.URL, endpoint string, reqauth bool) (*http.Response, error) {
+	return p.fetchWith(http.DefaultClient, url, endpoint, reqauth)
+}
+
+func (p *Manager) fetchWith(client *http.Client, url *url.URL, endpoint string, reqauth bool) (*http.Response, error) {
 	u := joinURL(url, endpoint)
 
 	req, err := http.NewRequest("GET", u.String(), nil)
@@ -395,7 +518,7 @@ func (p *Manager) fetch(url *url.URL, endpoint string, reqauth bool) (*http.Resp
 		return nil, ErrAuthorizationRequired
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -413,18 +536,22 @@ type FetchOptions struct {
 	Edition string
 }
 
+// FetchRecipe fetches the recipe of name from the official tree.
 func (p *Manager) FetchRecipe(name string, opts *FetchOptions) (*Recipe, error) {
 	if opts == nil {
 		opts = &FetchOptions{}
 	}
+	return p.fetchRecipe(p.official(), name, opts.Edition)
+}
 
+func (p *Manager) fetchRecipe(src *source, name, edition string) (*Recipe, error) {
 	if err := checkName(name); err != nil {
 		return nil, err
 	}
 
 	const filename = "recipe.yaml"
 
-	repo, edition, err := p.repoFor(opts.Edition)
+	repo, edition, err := p.repoFor(src, edition)
 	if err != nil {
 		return nil, err
 	}
@@ -512,7 +639,10 @@ func (p *Manager) verify(filename string, pkg *Package, origin string, sig []byt
 	return bytes.NewReader(content), nil
 }
 
-func (p *Manager) fetchbinary(name, version, edition string, container bool) error {
+// fetchbinary installs the package name at version from src, and records
+// the registry it comes from.  If that can't be recorded, the package is
+// unloaded: when upgrading, the previous version is already gone.
+func (p *Manager) fetchbinary(src *source, name, version, edition string, container bool) error {
 	goos := runtime.GOOS
 	if container {
 		goos = OSContainer
@@ -528,7 +658,7 @@ func (p *Manager) fetchbinary(name, version, edition string, container bool) err
 		return err
 	}
 
-	repo, edition, err := p.repoFor(edition)
+	repo, edition, err := p.repoFor(src, edition)
 	if err != nil {
 		return err
 	}
@@ -545,7 +675,7 @@ func (p *Manager) fetchbinary(name, version, edition string, container bool) err
 		return fail(ArtifactSignature, s+sigSuffix, err)
 	}
 
-	resp, err := p.fetch(repo, s, p.binaryNeedsAuth)
+	resp, err := p.fetch(repo, s, src.needsAuth)
 	if err != nil {
 		return fail(ArtifactPackage, s, err)
 	}
@@ -556,7 +686,21 @@ func (p *Manager) fetchbinary(name, version, edition string, container bool) err
 		return fail(ArtifactPackage, s, err)
 	}
 
-	return p.store.Load(&pkg, rd, sig)
+	if err := p.store.Load(&pkg, rd, sig); err != nil {
+		return err
+	}
+
+	// Nothing is recorded for the official tree, the default origin.
+	store, ok := p.store.(OriginStore)
+	if src.origin == "" || !ok {
+		return nil
+	}
+	if err := store.SetOrigin(&pkg, src.origin); err != nil {
+		// A package with a wrong origin would later be upgraded
+		// from the wrong place.
+		return errors.Join(err, p.store.Unload(&pkg))
+	}
+	return nil
 }
 
 type DelOptions struct {
@@ -600,6 +744,26 @@ func (p *Manager) Del(target string, opts *DelOptions) error {
 	return nil
 }
 
+// stageOf classifies a semver version's prerelease component into the
+// release stage shown by the UI: "stable" for a version with none, then
+// "devel", "beta" or "testing" for the well-known prerelease prefixes, and
+// the raw prerelease string itself (e.g. "-alpha.1") for anything else.
+func stageOf(version string) string {
+	pr := semver.Prerelease(version)
+	switch {
+	case pr == "":
+		return "stable"
+	case strings.HasPrefix(pr, "-devel."):
+		return "devel"
+	case strings.HasPrefix(pr, "-beta."):
+		return "beta"
+	case strings.HasPrefix(pr, "-rc."):
+		return "testing"
+	default:
+		return pr
+	}
+}
+
 type QueryOptions struct {
 	Type    string
 	Tag     string
@@ -609,7 +773,36 @@ type QueryOptions struct {
 	OnlyLocal bool
 }
 
-func (p *Manager) Query(opts *QueryOptions) (ret []*Integration, err error) {
+// QueryResult is the outcome of [Manager.QueryAll].
+type QueryResult struct {
+	Integrations []*Integration
+
+	// Warnings reports the registries that could not be queried, the
+	// registry entries shadowed by another source, and the installed
+	// integrations whose registry is no longer configured.
+	Warnings []string
+}
+
+// Query returns the integrations of [Manager.QueryAll], without its
+// warnings.
+func (p *Manager) Query(opts *QueryOptions) ([]*Integration, error) {
+	res, err := p.QueryAll(opts)
+	if err != nil {
+		return nil, err
+	}
+	return res.Integrations, nil
+}
+
+// QueryAll lists the installed integrations along with the ones available
+// from the official index and then from each additional registry, in
+// order.  An installed integration only takes the index entry of the
+// source it was installed from: the registry recorded for it, or the
+// official index when none was.  Otherwise, an integration provided by an
+// earlier source is not taken from a later registry.  A registry that
+// can't be queried, and an installed integration whose registry is no
+// longer configured, are reported in the warnings instead of failing the
+// query.
+func (p *Manager) QueryAll(opts *QueryOptions) (*QueryResult, error) {
 	if opts == nil {
 		opts = &QueryOptions{}
 	}
@@ -622,26 +815,73 @@ func (p *Manager) Query(opts *QueryOptions) (ret []*Integration, err error) {
 		return nil, fmt.Errorf("%w: %q", ErrBadEdition, edition)
 	}
 
+	res := &QueryResult{}
 	packages := make(map[string]*Integration)
-	for p, err := range p.List() {
+
+	// providers maps an integration name to the source it was taken
+	// from: the registry name, or "" for the official index.  An
+	// installed integration is bound to its own source beforehand.
+	providers := make(map[string]string)
+	store, _ := p.store.(OriginStore)
+	for pkg, err := range p.List() {
 		if err != nil {
 			return nil, err
 		}
 
+		var reg *extraRegistry
+		from := noOrigin
+		if store != nil {
+			origin, err := store.Origin(pkg)
+			if err != nil {
+				return nil, err
+			}
+			if origin != "" {
+				if reg = p.registryOf(origin); reg != nil {
+					from = reg.name
+				} else {
+					// An origin that is no longer configured
+					// matches no registry name, so no index
+					// entry is merged into it, ever: mergeIndex
+					// would otherwise have to repeat this warning.
+					res.Warnings = append(res.Warnings, fmt.Sprintf("integration %s: installed from %s, which is %v", pkg.Name, origin, ErrUnknownRegistry))
+					from = unconfiguredOrigin
+				}
+			}
+		}
+		providers[pkg.Name] = from
+
 		// we don't have all the information locally, so fill
 		// what we have and integrate the rest after we've hit
 		// the api.
-		packages[p.Name] = &Integration{
-			Id:          p.Name,
-			Name:        p.Name,
-			DisplayName: p.Name,
-			Tags:        []string{},
-			API:         PLUGIN_API_VERSION,
+		in := &Integration{
+			Id:            pkg.Name,
+			Name:          pkg.Name,
+			DisplayName:   pkg.Name,
+			Tags:          []string{},
+			API:           PLUGIN_API_VERSION,
+			LatestVersion: pkg.Version,
+			Stage:         stageOf(pkg.Version),
 			Installation: IntegrationInstallation{
 				Status:  "installed",
-				Version: p.Version,
+				Version: pkg.Version,
 			},
 		}
+		if reg != nil {
+			in.Registry = reg.name
+		}
+
+		// Fall back to the package's own manifest so an installed
+		// integration missing from the remote catalog still gets a
+		// complete card. A manifest that can't be read or parsed
+		// must not fail Query, it only leaves the fallback fields
+		// unset.
+		if mr, ok := p.store.(ManifestReader); ok {
+			if m, dir, err := mr.Manifest(pkg); err == nil {
+				integrationFromManifest(in, m, dir)
+			}
+		}
+
+		packages[pkg.Name] = in
 	}
 
 	if !opts.OnlyLocal {
@@ -654,69 +894,22 @@ func (p *Manager) Query(opts *QueryOptions) (ret []*Integration, err error) {
 			endp = "v1/integrations/integrations-" + PLUGIN_BUNDLE_VERSION + ".json"
 		}
 
-		res, err := p.fetch(from, endp, false)
-		if err != nil {
-			return nil, err
-		}
-		defer res.Body.Close()
-
-		var index IntegrationIndex
-		err = json.NewDecoder(res.Body).Decode(&index)
+		index, err := p.fetchIndex(http.DefaultClient, from, endp)
 		if err != nil {
 			return nil, err
 		}
 
-		for i := range index.Integrations {
-			plug := &index.Integrations[i]
+		mergeIndex(packages, providers, index, edition, "")
 
-			if plug.API != PLUGIN_API_VERSION {
+		for _, reg := range p.registries {
+			endp := "integrations-" + PLUGIN_BUNDLE_VERSION + ".json"
+			index, err := p.fetchIndex(p.registryClient, reg.url, endp)
+			if err != nil {
+				res.Warnings = append(res.Warnings, fmt.Sprintf("registry %s: %v", reg.name, err))
 				continue
 			}
-			if plug.Edition != edition {
-				continue
-			}
-
-			// Set compatibility fields for the former model
-			plug.Id = plug.Name
-			plug.LatestVersion = plug.Version
-			pr := semver.Prerelease(plug.Version)
-			switch {
-			case pr == "":
-				plug.Stage = "stable"
-			case strings.HasPrefix(pr, "-devel."):
-				plug.Stage = "devel"
-			case strings.HasPrefix(pr, "-beta."):
-				plug.Stage = "beta"
-			case strings.HasPrefix(pr, "-rc."):
-				plug.Stage = "testing"
-			default:
-				plug.Stage = pr
-			}
-			plug.Types.Destination = plug.HasConnectorType("exporter")
-			plug.Types.Source = plug.HasConnectorType("importer")
-			plug.Types.Storage = plug.HasConnectorType("storage")
-
-			if p, ok := packages[plug.Id]; ok {
-				p.Id = plug.Id
-				p.DisplayName = plug.DisplayName
-				p.Description = plug.Description
-				p.Homepage = plug.Homepage
-				p.Repository = plug.Repository
-				p.License = plug.License
-				p.Tags = plug.Tags
-				p.LatestVersion = plug.LatestVersion
-				p.Stage = plug.Stage
-				p.Types = plug.Types
-				p.Documentation = plug.Documentation
-				p.Icon = plug.Icon
-				p.Featured = plug.Featured
-
-				p.Installation.Available = true
-			} else {
-				plug.Installation.Status = "not-installed"
-				plug.Installation.Available = true
-				packages[plug.Id] = plug
-			}
+			w := mergeIndex(packages, providers, index, edition, reg.name)
+			res.Warnings = append(res.Warnings, w...)
 		}
 	}
 
@@ -739,11 +932,115 @@ func (p *Manager) Query(opts *QueryOptions) (ret []*Integration, err error) {
 			continue
 		}
 
-		ret = append(ret, plug)
+		res.Integrations = append(res.Integrations, plug)
 	}
 
-	slices.SortFunc(ret, func(a, b *Integration) int {
+	slices.SortFunc(res.Integrations, func(a, b *Integration) int {
 		return strings.Compare(a.Name, b.Name)
 	})
-	return ret, nil
+	return res, nil
+}
+
+const (
+	// maxIndexSize bounds the size of an integrations index.
+	maxIndexSize = 64 << 20 // 64 MiB
+
+	// registryIndexTimeout bounds the fetch of a registry index, so
+	// that a stalled registry doesn't hang the query.
+	registryIndexTimeout = 30 * time.Second
+)
+
+// fetchIndex retrieves an integrations index.  It never authenticates:
+// the index is public, and the request may target a third-party registry.
+func (p *Manager) fetchIndex(client *http.Client, from *url.URL, endpoint string) (*IntegrationIndex, error) {
+	res, err := p.fetchWith(client, from, endpoint, false)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	var index IntegrationIndex
+	if err := json.NewDecoder(io.LimitReader(res.Body, maxIndexSize)).Decode(&index); err != nil {
+		return nil, err
+	}
+	return &index, nil
+}
+
+const (
+	// noOrigin marks, in the providers map given to mergeIndex, an
+	// installed package with no recorded origin (or whose backend
+	// doesn't implement OriginStore).  The official index is its
+	// default source and still claims the entry when it lists it, but a
+	// registry that lists the name while the official index doesn't
+	// must not sound like the official catalog shadowed it: nothing
+	// actually did.
+	noOrigin = "\x00no-origin"
+
+	// unconfiguredOrigin marks an installed package whose recorded
+	// origin no longer matches any configured registry.  The warning is
+	// already emitted where the origin is resolved, so mergeIndex stays
+	// silent about it for every source, official included.
+	unconfiguredOrigin = "\x00unconfigured-origin"
+)
+
+// mergeIndex merges the entries of index matching the current plugin API
+// and the given edition into packages, keeping the first entry of a name.
+// registry is the name of the registry the index comes from, empty for the
+// official one.  An entry never replaces one taken from another source, as
+// recorded in providers (by registry name, empty for the official index,
+// or one of the sentinels above for an installed package); a registry
+// entry turned away that way is reported in the returned warnings, worded
+// after the actual reason: shadowed by the official index or an earlier
+// registry, or ignored because the installed package has no recorded
+// origin or was installed from another registry.
+func mergeIndex(packages map[string]*Integration, providers map[string]string, index *IntegrationIndex, edition, registry string) (warnings []string) {
+	seen := make(map[string]bool)
+	for i := range index.Integrations {
+		plug := &index.Integrations[i]
+
+		if plug.API != PLUGIN_API_VERSION || plug.Edition != edition || seen[plug.Name] {
+			continue
+		}
+		seen[plug.Name] = true
+
+		plug.normalize(registry)
+
+		by, ok := providers[plug.Id]
+		switch {
+		case ok && by == unconfiguredOrigin:
+			// Already warned about above; stay silent for every
+			// source.
+			continue
+		case ok && by == noOrigin && registry == "":
+			// The official index is the default source for a
+			// package installed with no recorded origin: let it
+			// claim the entry now that it actually lists it.
+			providers[plug.Id] = registry
+		case ok && by != registry:
+			if registry != "" {
+				switch {
+				case by == noOrigin:
+					warnings = append(warnings, fmt.Sprintf("registry %s: integration %s ignored: installed package has no recorded origin (reinstall it to track this registry)", registry, plug.Id))
+				case by == "":
+					warnings = append(warnings, fmt.Sprintf("registry %s: integration %s shadowed by official", registry, plug.Id))
+				case packages[plug.Id] != nil && packages[plug.Id].Installation.Status == "installed":
+					warnings = append(warnings, fmt.Sprintf("registry %s: integration %s ignored: installed from registry %s", registry, plug.Id, by))
+				default:
+					warnings = append(warnings, fmt.Sprintf("registry %s: integration %s shadowed by %s", registry, plug.Id, by))
+				}
+			}
+			continue
+		default:
+			providers[plug.Id] = registry
+		}
+
+		if p, ok := packages[plug.Id]; ok {
+			p.merge(plug)
+		} else {
+			plug.Installation.Status = "not-installed"
+			plug.Installation.Available = true
+			packages[plug.Id] = plug
+		}
+	}
+	return warnings
 }
