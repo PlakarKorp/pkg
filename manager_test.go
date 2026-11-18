@@ -1,17 +1,22 @@
 package pkg
 
 import (
+	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"iter"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/PlakarKorp/integration-sdk"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,15 +33,38 @@ type fakeBackend struct {
 	listErr   error
 	loadErr   error
 	unloadErr error
+
+	// manifests and manifestDirs back fakeBackend's ManifestReader
+	// implementation, keyed by package name. manifestErr, if set,
+	// makes Manifest fail for every package.
+	manifests    map[string]*Manifest
+	manifestDirs map[string]string
+	manifestErr  error
 }
 
 func newFakeBackend(pkgs ...*Package) *fakeBackend {
 	return &fakeBackend{
-		pkgs:     pkgs,
-		loadData: map[string][]byte{},
-		loadSigs: map[string][]byte{},
+		pkgs:         pkgs,
+		loadData:     map[string][]byte{},
+		loadSigs:     map[string][]byte{},
+		manifests:    map[string]*Manifest{},
+		manifestDirs: map[string]string{},
 	}
 }
+
+// Manifest implements ManifestReader.
+func (f *fakeBackend) Manifest(pkg *Package) (*Manifest, string, error) {
+	if f.manifestErr != nil {
+		return nil, "", f.manifestErr
+	}
+	m, ok := f.manifests[pkg.Name]
+	if !ok {
+		return nil, "", fmt.Errorf("no manifest for %q", pkg.Name)
+	}
+	return m, f.manifestDirs[pkg.Name], nil
+}
+
+var _ ManifestReader = (*fakeBackend)(nil)
 
 func (f *fakeBackend) List(name string) iter.Seq2[*Package, error] {
 	return func(yield func(*Package, error) bool) {
@@ -587,7 +615,7 @@ func TestWithBearerError(t *testing.T) {
 }
 
 func TestQueryOnlyLocal(t *testing.T) {
-	be := newFakeBackend(pkgVer("s3", "v1.2.3"), pkgVer("ftp", "v0.1.0"))
+	be := newFakeBackend(pkgVer("s3", "v1.2.3"), pkgVer("ftp", "v0.1.0-beta.2"))
 	m, _ := New(be, nil)
 
 	got, err := m.Query(&QueryOptions{OnlyLocal: true})
@@ -598,7 +626,13 @@ func TestQueryOnlyLocal(t *testing.T) {
 	require.Equal(t, "s3", got[1].Name)
 	for _, in := range got {
 		require.Equal(t, "installed", in.Installation.Status, in.Name)
+		// Missing from the catalog (no remote merge happens with
+		// OnlyLocal), so the UI card still needs a version and stage:
+		// they default to the installed package's own.
+		require.Equal(t, in.Installation.Version, in.LatestVersion, in.Name)
 	}
+	require.Equal(t, "beta", got[0].Stage, "ftp: derived from its installed v0.1.0-beta.2")
+	require.Equal(t, "stable", got[1].Stage, "s3: derived from its installed v1.2.3")
 }
 
 func TestQueryWithoutApiURL(t *testing.T) {
@@ -649,8 +683,10 @@ func TestQueryMergesRemoteIndex(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// s3 is installed locally; ftp is only remote.
-	be := newFakeBackend(pkgVer("s3", "v1.2.3"))
+	// s3 is installed locally, at a prerelease version, so its local
+	// default stage ("devel") differs from the catalog's ("stable");
+	// ftp is only remote.
+	be := newFakeBackend(pkgVer("s3", "v1.2.3-devel.1"))
 	m, _ := New(be, &Options{ApiURL: srv.URL})
 
 	got, err := m.Query(nil)
@@ -668,12 +704,12 @@ func TestQueryMergesRemoteIndex(t *testing.T) {
 	require.Contains(t, byName, "s3")
 	s3 := byName["s3"]
 	require.Equal(t, "installed", s3.Installation.Status)
-	require.Equal(t, "v1.2.3", s3.Installation.Version)
-	require.Equal(t, "v2.0.0", s3.LatestVersion)
+	require.Equal(t, "v1.2.3-devel.1", s3.Installation.Version)
+	require.Equal(t, "v2.0.0", s3.LatestVersion, "the catalog's, overwriting the local default")
 	require.Equal(t, "Amazon S3", s3.DisplayName, "merged from index")
 	require.True(t, s3.Installation.Available)
 	require.True(t, s3.Types.Storage, "from its storage connector")
-	require.Equal(t, "stable", s3.Stage)
+	require.Equal(t, "stable", s3.Stage, "the catalog's, overwriting the local default of devel")
 
 	require.Contains(t, byName, "ftp")
 	ftp := byName["ftp"]
@@ -719,6 +755,21 @@ func TestQueryFetchesIndexFromIndexURL(t *testing.T) {
 	require.Equal(t, "/integrations-"+PLUGIN_BUNDLE_VERSION+".json", path, "index fetched from the mirror root")
 	require.Len(t, got, 1)
 	require.Equal(t, "s3", got[0].Name)
+}
+
+func TestStageOf(t *testing.T) {
+	cases := map[string]string{
+		"v1.0.0":         "stable",
+		"v1.0.0-devel.1": "devel",
+		"v1.0.0-beta.2":  "beta",
+		"v1.0.0-rc.1":    "testing",
+		"v1.0.0-alpha.1": "-alpha.1",
+	}
+	for version, want := range cases {
+		if got := stageOf(version); got != want {
+			t.Errorf("stageOf(%q) = %q, want %q", version, got, want)
+		}
+	}
 }
 
 func TestQueryStageDerivation(t *testing.T) {
@@ -810,4 +861,492 @@ func TestQueryAPIError(t *testing.T) {
 	m, _ := New(newFakeBackend(), &Options{ApiURL: srv.URL})
 	_, err := m.Query(nil)
 	require.Error(t, err)
+}
+
+// testManifest builds the manifest used by the local-manifest-fallback
+// tests below: an importer with a JSON schema validator, an exporter
+// without one, and a README.md, all written under a temporary directory
+// that stands in for where the package was extracted.
+func testManifest(t *testing.T) (*Manifest, string) {
+	t.Helper()
+
+	dir := t.TempDir()
+
+	schemaDir := filepath.Join(dir, "plugin", "importer")
+	if err := os.MkdirAll(schemaDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	const schema = `{"type":"object","properties":{"endpoint":{"type":"string"}}}`
+	if err := os.WriteFile(filepath.Join(schemaDir, "schema.json"), []byte(schema), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	const readme = "# Talos Linux\n\nA Talos integration.\n"
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte(readme), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := &Manifest{
+		Name:        "talos",
+		DisplayName: "Talos Linux",
+		Description: "Talos Linux cluster integration",
+		Homepage:    "https://talos.dev",
+		License:     "MPL-2.0",
+		Tags:        []string{"kubernetes", "linux"},
+		Connectors: []ManifestConnector{
+			{
+				Type:      integration.ConnectorTypeImporter,
+				Protocols: []string{"talos"},
+				Validator: "./plugin/importer/schema.json",
+			},
+			{
+				Type:      integration.ConnectorTypeExporter,
+				Protocols: []string{"talos"},
+			},
+		},
+	}
+
+	return m, dir
+}
+
+func TestQueryLocalManifestFillsMetadata(t *testing.T) {
+	m, dir := testManifest(t)
+
+	be := newFakeBackend(pkgVer("talos", "v1.0.0"))
+	be.manifests["talos"] = m
+	be.manifestDirs["talos"] = dir
+
+	mgr, _ := New(be, nil)
+	got, err := mgr.Query(&QueryOptions{OnlyLocal: true})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+
+	if len(got) != 1 {
+		t.Fatalf("Query returned %d results, want 1", len(got))
+	}
+	in := got[0]
+
+	if in.DisplayName != "Talos Linux" {
+		t.Errorf("DisplayName = %q, want Talos Linux", in.DisplayName)
+	}
+	if in.Description != "Talos Linux cluster integration" {
+		t.Errorf("Description = %q", in.Description)
+	}
+	if in.Homepage != "https://talos.dev" {
+		t.Errorf("Homepage = %q", in.Homepage)
+	}
+	if in.License != "MPL-2.0" {
+		t.Errorf("License = %q", in.License)
+	}
+	if !slices.Equal(in.Tags, []string{"kubernetes", "linux"}) {
+		t.Errorf("Tags = %v", in.Tags)
+	}
+	if !in.Types.Source {
+		t.Error("Types.Source = false, want true (importer present)")
+	}
+	if !in.Types.Destination {
+		t.Error("Types.Destination = false, want true (exporter present)")
+	}
+	if len(in.Connectors) != 2 {
+		t.Fatalf("len(Connectors) = %d, want 2", len(in.Connectors))
+	}
+	if len(in.Connectors[0].Protocols) != 1 || in.Connectors[0].Protocols[0].Scheme != "talos" {
+		t.Errorf("Connectors[0].Protocols = %+v, want [{talos}]", in.Connectors[0].Protocols)
+	}
+	if in.Connectors[0].Validator == nil {
+		t.Error("Connectors[0].Validator = nil, want the decoded schema")
+	} else if v, ok := in.Connectors[0].Validator.(map[string]any); !ok || v["type"] != "object" {
+		t.Errorf("Connectors[0].Validator = %+v, want decoded JSON schema", in.Connectors[0].Validator)
+	}
+	if want := "# Talos Linux\n\nA Talos integration.\n"; in.Documentation != want {
+		t.Errorf("Documentation = %q, want %q", in.Documentation, want)
+	}
+}
+
+func TestQueryRemoteOverridesLocalManifest(t *testing.T) {
+	m, dir := testManifest(t)
+
+	// A local icon must not leak through either: the remote catalog's
+	// Icon (an https URL) always wins over the data URI built from it.
+	if err := os.MkdirAll(filepath.Join(dir, "assets"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "assets", "icon.svg"), []byte("<svg></svg>"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	be := newFakeBackend(pkgVer("talos", "v1.0.0"))
+	be.manifests["talos"] = m
+	be.manifestDirs["talos"] = dir
+
+	const index = `{
+		"version": "v1.0.0",
+		"integrations": [
+			{
+				"name": "talos",
+				"display_name": "Talos (official)",
+				"edition": "community",
+				"api": "v1.1.0",
+				"version": "v1.0.0",
+				"connectors": [{"type": "storage"}],
+				"icon": "https://cdn.example.com/talos/icon.svg"
+			}
+		]
+	}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, index)
+	}))
+	defer srv.Close()
+
+	mgr, _ := New(be, &Options{ApiURL: srv.URL})
+	got, err := mgr.Query(nil)
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+
+	if len(got) != 1 {
+		t.Fatalf("Query returned %d results, want 1", len(got))
+	}
+	in := got[0]
+	if in.DisplayName != "Talos (official)" {
+		t.Errorf("DisplayName = %q, want the remote value to win", in.DisplayName)
+	}
+	if len(in.Connectors) != 1 || in.Connectors[0].Type != "storage" {
+		t.Errorf("Connectors = %+v, want the remote connectors to win", in.Connectors)
+	}
+	// The remote fixture sets neither description nor documentation, and it
+	// must win entirely: the local manifest's values must not leak through.
+	if in.Description != "" {
+		t.Errorf("Description = %q, want empty (remote has none, must not leak the local value)", in.Description)
+	}
+	if in.Documentation != "" {
+		t.Errorf("Documentation = %q, want empty (remote has none, must not leak the local README)", in.Documentation)
+	}
+	if want := "https://cdn.example.com/talos/icon.svg"; in.Icon != want {
+		t.Errorf("Icon = %q, want %q (the remote value must win over the local data URI)", in.Icon, want)
+	}
+}
+
+func TestQueryLocalManifestErrorIgnored(t *testing.T) {
+	be := newFakeBackend(pkgVer("talos", "v1.0.0"))
+	be.manifestErr = errors.New("manifest unreadable")
+
+	mgr, _ := New(be, nil)
+	got, err := mgr.Query(&QueryOptions{OnlyLocal: true})
+	if err != nil {
+		t.Fatalf("Query: %v, want it to succeed despite the manifest error", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("Query returned %d results, want 1", len(got))
+	}
+	if got[0].DisplayName != got[0].Name {
+		t.Errorf("DisplayName = %q, want %q (fallback to Name)", got[0].DisplayName, got[0].Name)
+	}
+}
+
+func TestQueryLocalManifestMissingSchema(t *testing.T) {
+	dir := t.TempDir()
+	m := &Manifest{
+		Name:        "talos",
+		DisplayName: "Talos Linux",
+		Connectors: []ManifestConnector{
+			{
+				Type:      integration.ConnectorTypeImporter,
+				Protocols: []string{"talos"},
+				Validator: "./plugin/importer/missing-schema.json",
+			},
+		},
+	}
+
+	be := newFakeBackend(pkgVer("talos", "v1.0.0"))
+	be.manifests["talos"] = m
+	be.manifestDirs["talos"] = dir
+
+	mgr, _ := New(be, nil)
+	got, err := mgr.Query(&QueryOptions{OnlyLocal: true})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("Query returned %d results, want 1", len(got))
+	}
+	if got[0].Connectors[0].Validator != nil {
+		t.Errorf("Validator = %+v, want nil for a missing schema file", got[0].Connectors[0].Validator)
+	}
+	if got[0].DisplayName != "Talos Linux" {
+		t.Errorf("DisplayName = %q, want Talos Linux (rest of the manifest still applies)", got[0].DisplayName)
+	}
+}
+
+// TestQueryLocalManifestDefaultsWhenUnset guards against a manifest with
+// no display_name or tags clobbering the defaults Query already filled in:
+// DisplayName must fall back to the package name (not become ""), and Tags
+// must stay a non-nil slice (not become a JSON null).
+func TestQueryLocalManifestDefaultsWhenUnset(t *testing.T) {
+	dir := t.TempDir()
+	m := &Manifest{
+		Name: "talos",
+		Connectors: []ManifestConnector{
+			{Type: integration.ConnectorTypeImporter, Protocols: []string{"talos"}},
+		},
+	}
+
+	be := newFakeBackend(pkgVer("talos", "v1.0.0"))
+	be.manifests["talos"] = m
+	be.manifestDirs["talos"] = dir
+
+	mgr, _ := New(be, nil)
+	got, err := mgr.Query(&QueryOptions{OnlyLocal: true})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("Query returned %d results, want 1", len(got))
+	}
+	in := got[0]
+	if in.DisplayName != in.Name {
+		t.Errorf("DisplayName = %q, want %q (fallback to Name when the manifest has none)", in.DisplayName, in.Name)
+	}
+	if in.Tags == nil {
+		t.Error("Tags = nil, want a non-nil slice when the manifest has none")
+	}
+}
+
+// TestQueryLocalManifestSymlinkEscapeIgnored guards against a malicious or
+// broken package using a symlink to make Query read a file outside its
+// extracted directory (e.g. README.md -> ~/.ssh/id_ed25519). Both the
+// README and the connector's validator point through such a symlink here;
+// Query must ignore them rather than serve their target's content.
+func TestQueryLocalManifestSymlinkEscapeIgnored(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating symlinks needs elevated privileges on windows")
+	}
+
+	// Valid JSON so that, were the escape not blocked, it would also
+	// leak through the connector's validator (json.Unmarshal would
+	// otherwise reject it and Validator would end up nil either way,
+	// hiding a broken containment check).
+	const secretContent = `{"leaked":"SECRET"}`
+
+	outside := t.TempDir()
+	secret := filepath.Join(outside, "secret")
+	if err := os.WriteFile(secret, []byte(secretContent), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	if err := os.Symlink(secret, filepath.Join(dir, "README.md")); err != nil {
+		t.Fatal(err)
+	}
+
+	schemaDir := filepath.Join(dir, "plugin", "importer")
+	if err := os.MkdirAll(schemaDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secret, filepath.Join(schemaDir, "schema.json")); err != nil {
+		t.Fatal(err)
+	}
+
+	m := &Manifest{
+		Name:        "talos",
+		DisplayName: "Talos Linux",
+		Connectors: []ManifestConnector{
+			{
+				Type:      integration.ConnectorTypeImporter,
+				Protocols: []string{"talos"},
+				Validator: "./plugin/importer/schema.json",
+			},
+		},
+	}
+
+	be := newFakeBackend(pkgVer("talos", "v1.0.0"))
+	be.manifests["talos"] = m
+	be.manifestDirs["talos"] = dir
+
+	mgr, _ := New(be, nil)
+	got, err := mgr.Query(&QueryOptions{OnlyLocal: true})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("Query returned %d results, want 1", len(got))
+	}
+	in := got[0]
+	if in.Documentation != "" {
+		t.Errorf("Documentation = %q, want empty (README.md escapes the package directory)", in.Documentation)
+	}
+	if len(in.Connectors) != 1 {
+		t.Fatalf("len(Connectors) = %d, want 1", len(in.Connectors))
+	}
+	if in.Connectors[0].Validator != nil {
+		t.Errorf("Connectors[0].Validator = %+v, want nil (schema escapes the package directory)", in.Connectors[0].Validator)
+	}
+}
+
+func TestQueryLocalManifestIconSVG(t *testing.T) {
+	m, dir := testManifest(t)
+
+	const svg = `<svg xmlns="http://www.w3.org/2000/svg"></svg>`
+	if err := os.MkdirAll(filepath.Join(dir, "assets"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "assets", "icon.svg"), []byte(svg), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	be := newFakeBackend(pkgVer("talos", "v1.0.0"))
+	be.manifests["talos"] = m
+	be.manifestDirs["talos"] = dir
+
+	mgr, _ := New(be, nil)
+	got, err := mgr.Query(&QueryOptions{OnlyLocal: true})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("Query returned %d results, want 1", len(got))
+	}
+
+	want := "data:image/svg+xml;base64," + base64.StdEncoding.EncodeToString([]byte(svg))
+	if got[0].Icon != want {
+		t.Errorf("Icon = %q, want %q", got[0].Icon, want)
+	}
+}
+
+func TestQueryLocalManifestIconPNGFallback(t *testing.T) {
+	m, dir := testManifest(t)
+
+	png := []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a}
+	if err := os.MkdirAll(filepath.Join(dir, "assets"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "assets", "icon.png"), png, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	be := newFakeBackend(pkgVer("talos", "v1.0.0"))
+	be.manifests["talos"] = m
+	be.manifestDirs["talos"] = dir
+
+	mgr, _ := New(be, nil)
+	got, err := mgr.Query(&QueryOptions{OnlyLocal: true})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("Query returned %d results, want 1", len(got))
+	}
+
+	want := "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
+	if got[0].Icon != want {
+		t.Errorf("Icon = %q, want %q (fall back to icon.png when there is no icon.svg)", got[0].Icon, want)
+	}
+}
+
+func TestQueryLocalManifestIconSVGPreferredOverPNG(t *testing.T) {
+	m, dir := testManifest(t)
+
+	const svg = `<svg></svg>`
+	if err := os.MkdirAll(filepath.Join(dir, "assets"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "assets", "icon.svg"), []byte(svg), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "assets", "icon.png"), []byte{0x89, 'P', 'N', 'G'}, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	be := newFakeBackend(pkgVer("talos", "v1.0.0"))
+	be.manifests["talos"] = m
+	be.manifestDirs["talos"] = dir
+
+	mgr, _ := New(be, nil)
+	got, err := mgr.Query(&QueryOptions{OnlyLocal: true})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("Query returned %d results, want 1", len(got))
+	}
+
+	want := "data:image/svg+xml;base64," + base64.StdEncoding.EncodeToString([]byte(svg))
+	if got[0].Icon != want {
+		t.Errorf("Icon = %q, want the svg to win over the png", got[0].Icon)
+	}
+}
+
+// TestQueryLocalManifestIconOversizedSkipped guards against serving a
+// truncated, broken image: an icon over maxLocalIconSize must be skipped
+// entirely (Icon left empty), never cut short like readDocumentation or
+// readValidator would.
+func TestQueryLocalManifestIconOversizedSkipped(t *testing.T) {
+	m, dir := testManifest(t)
+
+	if err := os.MkdirAll(filepath.Join(dir, "assets"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	big := bytes.Repeat([]byte("a"), maxLocalIconSize+1)
+	if err := os.WriteFile(filepath.Join(dir, "assets", "icon.svg"), big, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	be := newFakeBackend(pkgVer("talos", "v1.0.0"))
+	be.manifests["talos"] = m
+	be.manifestDirs["talos"] = dir
+
+	mgr, _ := New(be, nil)
+	got, err := mgr.Query(&QueryOptions{OnlyLocal: true})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("Query returned %d results, want 1", len(got))
+	}
+
+	if got[0].Icon != "" {
+		t.Errorf("Icon = %q, want empty (an oversized icon must be skipped, not truncated)", got[0].Icon)
+	}
+}
+
+// TestQueryLocalManifestIconSymlinkEscapeIgnored guards against a symlink
+// at assets/icon.svg making Query serve up a file outside the package's
+// extracted directory, the same way TestQueryLocalManifestSymlinkEscapeIgnored
+// does for README.md and a connector's validator.
+func TestQueryLocalManifestIconSymlinkEscapeIgnored(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating symlinks needs elevated privileges on windows")
+	}
+
+	outside := t.TempDir()
+	secret := filepath.Join(outside, "secret.svg")
+	if err := os.WriteFile(secret, []byte(`<svg>SECRET</svg>`), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	m, dir := testManifest(t)
+	if err := os.MkdirAll(filepath.Join(dir, "assets"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secret, filepath.Join(dir, "assets", "icon.svg")); err != nil {
+		t.Fatal(err)
+	}
+
+	be := newFakeBackend(pkgVer("talos", "v1.0.0"))
+	be.manifests["talos"] = m
+	be.manifestDirs["talos"] = dir
+
+	mgr, _ := New(be, nil)
+	got, err := mgr.Query(&QueryOptions{OnlyLocal: true})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("Query returned %d results, want 1", len(got))
+	}
+
+	if got[0].Icon != "" {
+		t.Errorf("Icon = %q, want empty (assets/icon.svg escapes the package directory)", got[0].Icon)
+	}
 }
