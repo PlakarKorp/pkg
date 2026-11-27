@@ -322,6 +322,53 @@ func TestManifestConnectorExecutable(t *testing.T) {
 	}
 }
 
+func TestManifestConnectorUI(t *testing.T) {
+	tests := []struct {
+		name      string
+		validator string
+		ui        string
+		wantErr   string
+	}{
+		{"none", "schema.json", "", ""},
+		{"beside the validator", "schema.json", "./ui.json", ""},
+		{"without validator", "", "ui.json", "ui needs a validator to lay out"},
+		{"parent", "schema.json", "../ui.json", `ui "../ui.json" escapes the integration directory`},
+		{"absolute", "schema.json", "/etc/ui.json", `ui "/etc/ui.json" escapes the integration directory`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := ManifestConnector{Type: "provisioner", Executable: "tool", Protocols: []string{"localdir"}, Validator: tt.validator, UI: tt.ui}
+			err := c.Validate()
+			requireErr(t, err, tt.wantErr)
+		})
+	}
+}
+
+func TestManifestConnectorFactory(t *testing.T) {
+	tests := []struct {
+		name    string
+		ctype   integration.ConnectorType
+		factory string
+		ui      string
+		wantErr string
+	}{
+		{"none", "provisioner", "", "", ""},
+		{"schema alone", "provisioner", "factory.json", "", ""},
+		{"schema and layout", "provisioner", "./factory.json", "./factory.ui.json", ""},
+		{"not a provisioner", "exporter", "factory.json", "", "factory are for a provisioner"},
+		{"layout alone", "provisioner", "", "factory.ui.json", "factory_ui needs factory to lay out"},
+		{"parent", "provisioner", "../factory.json", "", `factory "../factory.json" escapes the integration directory`},
+		{"layout parent", "provisioner", "factory.json", "../ui.json", `factory_ui "../ui.json" escapes the integration directory`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := ManifestConnector{Type: tt.ctype, Executable: "tool", Protocols: []string{"localdir"}, Factory: tt.factory, FactoryUI: tt.ui}
+			err := c.Validate()
+			requireErr(t, err, tt.wantErr)
+		})
+	}
+}
+
 func TestManifestConnectorExtraFiles(t *testing.T) {
 	tests := []struct {
 		name    string

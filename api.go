@@ -39,11 +39,16 @@ type Protocol struct {
 }
 
 type Connector struct {
-	Type      string     `json:"type"` // importer, exporter, storage
+	Type      string     `json:"type"` // importer, exporter, storage, ...
 	Protocols []Protocol `json:"protocols"`
 	Class     string     `json:"class"`
 	SubClass  string     `json:"subclass"`
-	Validator any        `json:"validator"` // json schema
+	Validator any        `json:"validator"`    // json schema
+	UI        any        `json:"ui,omitempty"` // JSON Forms UI schema
+
+	// factory for the provisioners
+	Factory   any `json:"factory,omitempty"`
+	FactoryUI any `json:"factory_ui,omitempty"`
 }
 
 type Integration struct {

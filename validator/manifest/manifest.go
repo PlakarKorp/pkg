@@ -83,6 +83,9 @@ func validate(m *pkg.Manifest) error {
 		if !filepath.IsLocal(c.Validator) {
 			return fmt.Errorf("connector #%d: validator %q escapes the integration directory", i, c.Validator)
 		}
+		if c.UI != "" && !filepath.IsLocal(c.UI) {
+			return fmt.Errorf("connector #%d: ui %q escapes the integration directory", i, c.UI)
+		}
 	}
 	return nil
 }
