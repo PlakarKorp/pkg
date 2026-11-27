@@ -3,7 +3,7 @@ module github.com/PlakarKorp/pkg
 go 1.26.10
 
 require (
-	github.com/PlakarKorp/integration-sdk v1.1.5
+	github.com/PlakarKorp/integration-sdk v1.1.6-0.20261127165117-afb92e4fcb78
 	github.com/PlakarKorp/integrations/fs v1.1.12
 	github.com/PlakarKorp/integrations/ptar v1.1.3-0.20261117104921-4ab1dbbeb267
 	github.com/PlakarKorp/kloset v1.2.0-beta.1

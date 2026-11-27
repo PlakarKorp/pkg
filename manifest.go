@@ -40,15 +40,27 @@ var protocolRe = regexp.MustCompile(`^[A-Za-z0-9+.][A-Za-z0-9+.-]+$`)
 var imageIDRe = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 
 type ManifestConnector struct {
-	Type          integration.ConnectorType    `yaml:"type"`
-	Class         integration.ResourceClass    `yaml:"class,omitempty"`
-	SubClass      integration.ResourceSubClass `yaml:"subclass,omitempty"`
-	Validator     string                       `yaml:"validator,omitempty"`
-	Protocols     []string                     `yaml:"protocols"`
-	LocationFlags []string                     `yaml:"location_flags,omitempty"`
-	Executable    string                       `yaml:"executable,omitempty"`
-	Args          []string                     `yaml:"args,omitempty"`
-	ExtraFiles    []string                     `yaml:"extra_files,omitempty"`
+	Type      integration.ConnectorType    `yaml:"type"`
+	Class     integration.ResourceClass    `yaml:"class,omitempty"`
+	SubClass  integration.ResourceSubClass `yaml:"subclass,omitempty"`
+	Validator string                       `yaml:"validator,omitempty"`
+
+	// UI lays the validator's fields out as a JSON Forms UI schema. Without
+	// it the form is generated from the validator.
+	UI string `yaml:"ui,omitempty"`
+
+	// Factory is the schema of what a provisioner is asked to create,
+	// each time it is used.
+	Factory string `yaml:"factory,omitempty"`
+
+	// FactoryUI is the web form for Factory.
+	FactoryUI string `yaml:"factory_ui,omitempty"`
+
+	Protocols     []string `yaml:"protocols"`
+	LocationFlags []string `yaml:"location_flags,omitempty"`
+	Executable    string   `yaml:"executable,omitempty"`
+	Args          []string `yaml:"args,omitempty"`
+	ExtraFiles    []string `yaml:"extra_files,omitempty"`
 
 	// Containerized connectors carry an image pin instead of an executable.
 	// ImageID is the sha256 of the image, filled at package creation time
@@ -268,6 +280,32 @@ func (conn *ManifestConnector) Validate() error {
 			return fmt.Errorf("protocol %q listed twice", p)
 		}
 		seen[p] = true
+	}
+
+	if conn.UI != "" {
+		if conn.Validator == "" {
+			return fmt.Errorf("ui needs a validator to lay out")
+		}
+		if !filepath.IsLocal(conn.UI) {
+			return fmt.Errorf("ui %q escapes the integration directory", conn.UI)
+		}
+	}
+
+	if conn.Factory != "" {
+		if ct != integration.ConnectorTypeProvisioner {
+			return fmt.Errorf("factory are for a provisioner")
+		}
+		if !filepath.IsLocal(conn.Factory) {
+			return fmt.Errorf("factory %q escapes the integration directory", conn.Factory)
+		}
+	}
+	if conn.FactoryUI != "" {
+		if conn.Factory == "" {
+			return fmt.Errorf("factory_ui needs factory to lay out")
+		}
+		if !filepath.IsLocal(conn.FactoryUI) {
+			return fmt.Errorf("factory_ui %q escapes the integration directory", conn.FactoryUI)
+		}
 	}
 
 	seen = make(map[string]bool)
